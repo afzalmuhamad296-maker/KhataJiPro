@@ -1,10 +1,14 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, Alert } from 'react-native';
+import React, { useState, useRef, useCallback } from 'react';
+import { View, Text, ScrollView, Pressable, StyleSheet, Alert, Modal, Linking, Share, Platform } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { useApp } from '../../contexts/AppContext';
+import QRCode from 'react-native-qrcode-svg';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import * as Haptics from 'expo-haptics';
 
 export default function LedgerScreen() {
   const insets = useSafeAreaInsets();
@@ -12,6 +16,8 @@ export default function LedgerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { getCustomerById, getCustomerTransactions, deleteTransaction, formatCurrency, t } = useApp();
   const [filter, setFilter] = useState<'all' | 'credit' | 'debit'>('all');
+  const [showQR, setShowQR] = useState(false);
+  const qrRef = useRef<any>(null);
 
   const customer = getCustomerById(id || '');
   const allTransactions = getCustomerTransactions(id || '');
@@ -29,6 +35,64 @@ export default function LedgerScreen() {
       </SafeAreaView>
     );
   }
+
+  const qrData = customer ? JSON.stringify({
+    name: customer.name,
+    phone: customer.phone,
+    balance: customer.balance,
+    shop: 'KhataJi Pro',
+  }) : '';
+
+  const handleShareWhatsApp = useCallback(async () => {
+    if (!customer) return;
+    const message = `*KhataJi Pro - Customer QR*\n\nName: ${customer.name}\nPhone: ${customer.phone}\nBalance: Rs. ${customer.balance.toLocaleString('en-PK')}\n\nScan this QR code to view ledger details.`;
+    const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(message)}`;
+    try {
+      const canOpen = await Linking.canOpenURL(whatsappUrl);
+      if (canOpen) {
+        await Linking.openURL(whatsappUrl);
+      } else {
+        Alert.alert('WhatsApp', 'WhatsApp is not installed on this device');
+      }
+    } catch {
+      Alert.alert('Error', 'Could not open WhatsApp');
+    }
+  }, [customer]);
+
+  const handleDownloadQR = useCallback(async () => {
+    if (!qrRef.current) return;
+    try {
+      qrRef.current.toDataURL(async (dataURL: string) => {
+        const filename = `${customer?.name.replace(/\s+/g, '_')}_QR.png`;
+        const fileUri = `${FileSystem.cacheDirectory}${filename}`;
+        await FileSystem.writeAsStringAsync(fileUri, dataURL, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        const isAvailable = await Sharing.isAvailableAsync();
+        if (isAvailable) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: 'image/png',
+            dialogTitle: 'Save QR Code',
+          });
+        } else {
+          Alert.alert('Saved', `QR code saved to ${fileUri}`);
+        }
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      Alert.alert('Error', 'Could not save QR code');
+    }
+  }, [customer]);
+
+  const handleShareQR = useCallback(async () => {
+    if (!customer) return;
+    const message = `KhataJi Pro\nCustomer: ${customer.name}\nPhone: ${customer.phone}\nBalance: Rs. ${customer.balance.toLocaleString('en-PK')}`;
+    try {
+      await Share.share({ message });
+    } catch {
+      // user cancelled
+    }
+  }, [customer]);
 
   const handleDeleteTransaction = (txnId: string) => {
     Alert.alert(
@@ -102,6 +166,13 @@ export default function LedgerScreen() {
             <Pressable style={[styles.actionBtn, { backgroundColor: theme.paymentLight }]} onPress={() => router.push('/add-payment')}>
               <MaterialIcons name="payments" size={20} color={theme.payment} />
               <Text style={[styles.actionLabel, { color: theme.payment }]}>{t.pay}</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.actionBtn, { backgroundColor: '#E3F2FD' }]}
+              onPress={() => { setShowQR(true); Haptics.selectionAsync(); }}
+            >
+              <MaterialIcons name="qr-code-2" size={20} color="#1565C0" />
+              <Text style={[styles.actionLabel, { color: '#1565C0' }]}>QR</Text>
             </Pressable>
           </View>
         </View>
@@ -178,6 +249,59 @@ export default function LedgerScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* QR Code Modal */}
+      <Modal visible={showQR} animationType="slide" transparent statusBarTranslucent>
+        <View style={styles.qrOverlay}>
+          <View style={styles.qrModal}>
+            <View style={styles.qrHeader}>
+              <Text style={styles.qrTitle}>Customer QR Code</Text>
+              <Pressable onPress={() => setShowQR(false)} style={styles.qrCloseBtn}>
+                <MaterialIcons name="close" size={22} color={theme.textDark} />
+              </Pressable>
+            </View>
+
+            <View style={styles.qrContent}>
+              <View style={styles.qrFrame}>
+                <QRCode
+                  value={qrData}
+                  size={200}
+                  color={theme.primaryDark}
+                  backgroundColor="#FFFFFF"
+                  getRef={(ref) => { qrRef.current = ref; }}
+                />
+              </View>
+
+              <View style={styles.qrCustomerInfo}>
+                <Text style={styles.qrCustomerName}>{customer?.name}</Text>
+                <Text style={styles.qrCustomerPhone}>{customer?.phone}</Text>
+                <View style={[styles.qrBalanceBadge, { backgroundColor: (customer?.balance || 0) > 0 ? theme.creditLight : theme.paymentLight }]}>
+                  <Text style={[styles.qrBalanceText, { color: (customer?.balance || 0) > 0 ? theme.credit : theme.payment }]}>
+                    Balance: {formatCurrency(customer?.balance || 0)}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.qrActions}>
+                <Pressable style={[styles.qrActionBtn, { backgroundColor: '#25D366' }]} onPress={handleShareWhatsApp}>
+                  <MaterialIcons name="chat" size={20} color="#FFF" />
+                  <Text style={styles.qrActionBtnText}>WhatsApp</Text>
+                </Pressable>
+                <Pressable style={[styles.qrActionBtn, { backgroundColor: theme.primary }]} onPress={handleDownloadQR}>
+                  <MaterialIcons name="download" size={20} color="#FFF" />
+                  <Text style={styles.qrActionBtnText}>Download</Text>
+                </Pressable>
+                <Pressable style={[styles.qrActionBtn, { backgroundColor: '#1565C0' }]} onPress={handleShareQR}>
+                  <MaterialIcons name="share" size={20} color="#FFF" />
+                  <Text style={styles.qrActionBtnText}>Share</Text>
+                </Pressable>
+              </View>
+
+              <Text style={styles.qrHint}>Scan this QR to quickly open this customer's ledger</Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Bottom Action Buttons */}
       <View style={[styles.bottomActions, { paddingBottom: insets.bottom + 16 }]}>
@@ -432,5 +556,103 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 14,
     fontWeight: '700',
+  },
+  // QR Modal Styles
+  qrOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  qrModal: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: theme.surface,
+    borderRadius: theme.borderRadius.xl,
+    overflow: 'hidden',
+  },
+  qrHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.borderLight,
+  },
+  qrTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: theme.textDark,
+  },
+  qrCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: theme.backgroundSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qrContent: {
+    alignItems: 'center',
+    padding: 24,
+  },
+  qrFrame: {
+    padding: 20,
+    borderRadius: theme.borderRadius.lg,
+    backgroundColor: '#FFF',
+    borderWidth: 2,
+    borderColor: theme.borderLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qrCustomerInfo: {
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  qrCustomerName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: theme.textDark,
+  },
+  qrCustomerPhone: {
+    fontSize: 14,
+    color: theme.textMuted,
+    marginTop: 4,
+  },
+  qrBalanceBadge: {
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  qrBalanceText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  qrActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 20,
+  },
+  qrActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: theme.borderRadius.sm,
+  },
+  qrActionBtnText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  qrHint: {
+    fontSize: 12,
+    color: theme.textMuted,
+    marginTop: 16,
+    textAlign: 'center',
   },
 });
