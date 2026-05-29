@@ -87,34 +87,44 @@ export default function DashboardScreen() {
               </View>
               <Text style={styles.quickActionLabel}>{t.addPayment}</Text>
             </Pressable>
+            <Pressable style={styles.quickAction} onPress={() => router.push('/voice-entry')}>
+              <View style={[styles.quickActionIcon, { backgroundColor: '#FCE4EC' }]}>
+                <MaterialIcons name="mic" size={24} color="#C62828" />
+              </View>
+              <Text style={styles.quickActionLabel}>Voice</Text>
+            </Pressable>
             <Pressable style={styles.quickAction} onPress={() => router.push('/qr-scanner')}>
               <View style={[styles.quickActionIcon, { backgroundColor: '#E3F2FD' }]}>
                 <MaterialIcons name="qr-code-scanner" size={24} color="#1565C0" />
               </View>
               <Text style={styles.quickActionLabel}>QR Scan</Text>
             </Pressable>
-            <Pressable style={styles.quickAction} onPress={() => router.push('/payment-methods')}>
-              <View style={[styles.quickActionIcon, { backgroundColor: '#EDE7F6' }]}>
-                <MaterialIcons name="account-balance-wallet" size={24} color="#7B1FA2" />
-              </View>
-              <Text style={styles.quickActionLabel}>Methods</Text>
-            </Pressable>
           </View>
           <View style={[styles.quickActionsRow, { marginTop: 12 }]}>
-            <Pressable style={styles.quickAction} onPress={() => router.push('/add-customer')}>
+            <Pressable style={styles.quickAction} onPress={() => router.push('/chat-assistant')}>
               <View style={[styles.quickActionIcon, { backgroundColor: theme.backgroundSecondary }]}>
-                <MaterialIcons name="person-add" size={24} color={theme.primary} />
+                <MaterialIcons name="smart-toy" size={24} color={theme.primary} />
               </View>
-              <Text style={styles.quickActionLabel}>{t.addCustomer}</Text>
+              <Text style={styles.quickActionLabel}>AI Chat</Text>
             </Pressable>
-            <Pressable style={styles.quickAction} onPress={() => router.push('/(tabs)/reports')}>
+            <Pressable style={styles.quickAction} onPress={() => router.push('/invoice')}>
               <View style={[styles.quickActionIcon, { backgroundColor: '#FFF3E0' }]}>
-                <MaterialIcons name="assessment" size={24} color="#E65100" />
+                <MaterialIcons name="receipt-long" size={24} color="#E65100" />
               </View>
-              <Text style={styles.quickActionLabel}>{t.reports}</Text>
+              <Text style={styles.quickActionLabel}>Invoice</Text>
             </Pressable>
-            <View style={styles.quickAction} />
-            <View style={styles.quickAction} />
+            <Pressable style={styles.quickAction} onPress={() => router.push('/insights')}>
+              <View style={[styles.quickActionIcon, { backgroundColor: '#EDE7F6' }]}>
+                <MaterialIcons name="auto-awesome" size={24} color="#6A1B9A" />
+              </View>
+              <Text style={styles.quickActionLabel}>Insights</Text>
+            </Pressable>
+            <Pressable style={styles.quickAction} onPress={() => router.push('/more-features')}>
+              <View style={[styles.quickActionIcon, { backgroundColor: theme.backgroundSecondary }]}>
+                <MaterialIcons name="apps" size={24} color={theme.textSecondary} />
+              </View>
+              <Text style={styles.quickActionLabel}>More</Text>
+            </Pressable>
           </View>
         </View>
 

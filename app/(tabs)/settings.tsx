@@ -2,11 +2,13 @@ import React from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, Switch, Alert } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { theme } from '../../constants/theme';
 import { useApp } from '../../contexts/AppContext';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { settings, language, t, updateSettings, setLanguage } = useApp();
 
   const settingsGroups = [
@@ -43,18 +45,43 @@ export default function SettingsScreen() {
       ],
     },
     {
+      title: 'TOOLS',
+      items: [
+        { icon: 'mic' as const, label: 'Voice Entry', value: '', onPress: () => router.push('/voice-entry') },
+        { icon: 'smart-toy' as const, label: 'AI Chat', value: '', onPress: () => router.push('/chat-assistant') },
+        { icon: 'receipt-long' as const, label: 'Invoice', value: '', onPress: () => router.push('/invoice') },
+        { icon: 'notifications' as const, label: 'Reminders', value: '', onPress: () => router.push('/reminders') },
+        { icon: 'repeat' as const, label: 'Recurring', value: '', onPress: () => router.push('/recurring') },
+        { icon: 'inventory' as const, label: 'Stock', value: '', onPress: () => router.push('/stock') },
+        { icon: 'local-shipping' as const, label: 'Suppliers', value: '', onPress: () => router.push('/suppliers') },
+      ],
+    },
+    {
+      title: 'REPORTS & DATA',
+      items: [
+        { icon: 'assessment' as const, label: 'Sales Report', value: '', onPress: () => router.push('/sales-report') },
+        { icon: 'account-balance-wallet' as const, label: 'Expenses', value: '', onPress: () => router.push('/expense-tracker') },
+        { icon: 'description' as const, label: 'Statement', value: '', onPress: () => router.push('/customer-statement') },
+        { icon: 'auto-awesome' as const, label: 'AI Insights', value: '', onPress: () => router.push('/insights') },
+        { icon: 'send' as const, label: 'Bulk SMS', value: '', onPress: () => router.push('/bulk-sms') },
+        { icon: 'account-balance-wallet' as const, label: 'Payment Methods', value: '', onPress: () => router.push('/payment-methods') },
+      ],
+    },
+    {
       title: 'DATA',
       items: [
-        { icon: 'backup' as const, label: t.backup, value: '', onPress: () => Alert.alert('Backup', 'Data backed up successfully!') },
-        { icon: 'file-download' as const, label: t.export, value: '', onPress: () => Alert.alert('Export', 'Data exported to file!') },
+        { icon: 'backup' as const, label: t.backup, value: '', onPress: () => router.push('/more-features') },
+        { icon: 'file-download' as const, label: t.export, value: '', onPress: () => router.push('/more-features') },
+        { icon: 'business' as const, label: 'Multi-Business', value: '', onPress: () => router.push('/more-features') },
       ],
     },
     {
       title: 'ABOUT',
       items: [
-        { icon: 'info' as const, label: t.about, value: 'v1.0.0', onPress: () => {} },
-        { icon: 'share' as const, label: 'Share App', value: '', onPress: () => {} },
-        { icon: 'star' as const, label: 'Rate App', value: '', onPress: () => {} },
+        { icon: 'info' as const, label: t.about, value: 'v2.0.0', onPress: () => {} },
+        { icon: 'share' as const, label: 'Share App', value: '', onPress: () => router.push('/more-features') },
+        { icon: 'star' as const, label: 'Rate App', value: '', onPress: () => router.push('/more-features') },
+        { icon: 'campaign' as const, label: 'Announcements', value: '', onPress: () => router.push('/more-features') },
       ],
     },
   ];

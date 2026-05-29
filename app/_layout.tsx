@@ -14,6 +14,19 @@ export default function RootLayout() {
           <Stack.Screen name="add-payment" options={{ presentation: 'modal' }} />
           <Stack.Screen name="qr-scanner" options={{ presentation: 'fullScreenModal' }} />
           <Stack.Screen name="payment-methods" options={{ presentation: 'card' }} />
+          <Stack.Screen name="voice-entry" options={{ presentation: 'card' }} />
+          <Stack.Screen name="chat-assistant" options={{ presentation: 'card' }} />
+          <Stack.Screen name="reminders" options={{ presentation: 'card' }} />
+          <Stack.Screen name="recurring" options={{ presentation: 'card' }} />
+          <Stack.Screen name="invoice" options={{ presentation: 'card' }} />
+          <Stack.Screen name="expense-tracker" options={{ presentation: 'card' }} />
+          <Stack.Screen name="customer-statement" options={{ presentation: 'card' }} />
+          <Stack.Screen name="insights" options={{ presentation: 'card' }} />
+          <Stack.Screen name="stock" options={{ presentation: 'card' }} />
+          <Stack.Screen name="bulk-sms" options={{ presentation: 'card' }} />
+          <Stack.Screen name="suppliers" options={{ presentation: 'card' }} />
+          <Stack.Screen name="sales-report" options={{ presentation: 'card' }} />
+          <Stack.Screen name="more-features" options={{ presentation: 'card' }} />
         </Stack>
       </AppProvider>
     </AlertProvider>
