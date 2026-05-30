@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, Platform } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../../constants/theme';
 import { useApp } from '../../contexts/AppContext';
 
@@ -40,98 +41,113 @@ export default function UdhaarScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>{t.udhaar}</Text>
         <View style={styles.headerActions}>
-          <Pressable style={styles.addCreditBtn} onPress={() => router.push('/add-credit')}>
-            <MaterialIcons name="add" size={18} color="#FFF" />
-            <Text style={styles.addCreditText}>{t.credit}</Text>
+          <Pressable style={({ pressed }) => [styles.addCreditBtn, pressed && { opacity: 0.85 }]} onPress={() => router.push('/add-credit')}>
+            <MaterialIcons name="north-east" size={16} color="#FFF" />
+            <Text style={styles.addBtnText}>{t.credit}</Text>
           </Pressable>
-          <Pressable style={styles.addPaymentBtn} onPress={() => router.push('/add-payment')}>
-            <MaterialIcons name="add" size={18} color="#FFF" />
-            <Text style={styles.addPaymentText}>{t.debit}</Text>
+          <Pressable style={({ pressed }) => [styles.addPaymentBtn, pressed && { opacity: 0.85 }]} onPress={() => router.push('/add-payment')}>
+            <MaterialIcons name="south-west" size={16} color="#FFF" />
+            <Text style={styles.addBtnText}>{t.debit}</Text>
           </Pressable>
         </View>
       </View>
 
       {/* Summary Cards */}
       <View style={styles.summaryRow}>
-        <View style={[styles.summaryCard, { borderLeftColor: theme.credit }]}>
+        <View style={styles.summaryCard}>
+          <LinearGradient colors={['#FEE2E2', '#FECACA']} style={styles.summaryIconWrap}>
+            <MaterialIcons name="north-east" size={18} color={theme.credit} />
+          </LinearGradient>
           <Text style={styles.summaryLabel}>{t.totalCredit}</Text>
           <Text style={[styles.summaryAmount, { color: theme.credit }]}>{formatCurrency(totalCredit)}</Text>
         </View>
-        <View style={[styles.summaryCard, { borderLeftColor: theme.payment }]}>
+        <View style={styles.summaryCard}>
+          <LinearGradient colors={['#DCFCE7', '#BBF7D0']} style={styles.summaryIconWrap}>
+            <MaterialIcons name="south-west" size={18} color={theme.payment} />
+          </LinearGradient>
           <Text style={styles.summaryLabel}>{t.totalDebit}</Text>
           <Text style={[styles.summaryAmount, { color: theme.payment }]}>{formatCurrency(totalDebit)}</Text>
         </View>
       </View>
 
       {/* Filter Chips */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
+      <View style={styles.filterRow}>
         {([
-          { key: 'all', label: t.all },
-          { key: 'credit', label: t.credits },
-          { key: 'debit', label: t.payments },
+          { key: 'all', label: t.all, icon: 'list' },
+          { key: 'credit', label: t.credits, icon: 'north-east' },
+          { key: 'debit', label: t.payments, icon: 'south-west' },
         ] as const).map(item => (
           <Pressable
             key={item.key}
             style={[styles.filterChip, filter === item.key && styles.filterChipActive]}
             onPress={() => setFilter(item.key)}
           >
+            <MaterialIcons name={item.icon as any} size={14} color={filter === item.key ? '#FFF' : theme.textMuted} />
             <Text style={[styles.filterChipText, filter === item.key && styles.filterChipTextActive]}>
               {item.label}
             </Text>
           </Pressable>
         ))}
-      </ScrollView>
+      </View>
 
       {/* Transaction List */}
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 16 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 16 }}
         showsVerticalScrollIndicator={false}
       >
         {Object.entries(groupedByDate).map(([date, txns]) => (
           <View key={date}>
-            <Text style={styles.dateHeader}>{formatDate(date)}</Text>
+            <View style={styles.dateHeaderRow}>
+              <View style={styles.dateHeaderLine} />
+              <Text style={styles.dateHeader}>{formatDate(date)}</Text>
+              <View style={styles.dateHeaderLine} />
+            </View>
             {txns.map(txn => (
-              <Pressable key={txn.id} style={styles.txnCard}>
+              <Pressable key={txn.id} style={({ pressed }) => [styles.txnCard, pressed && { opacity: 0.85 }]}>
                 <View style={[styles.txnIcon, { backgroundColor: txn.type === 'credit' ? theme.creditLight : theme.paymentLight }]}>
                   <MaterialIcons
-                    name={txn.type === 'credit' ? 'arrow-upward' : 'arrow-downward'}
-                    size={20}
+                    name={txn.type === 'credit' ? 'north-east' : 'south-west'}
+                    size={18}
                     color={txn.type === 'credit' ? theme.credit : theme.payment}
                   />
                 </View>
                 <View style={styles.txnInfo}>
                   <Text style={styles.txnName}>{txn.customerName}</Text>
                   <Text style={styles.txnNote} numberOfLines={1}>{txn.note}</Text>
-                  {txn.items && txn.items.length > 0 && (
+                  {txn.items && txn.items.length > 0 ? (
                     <View style={styles.itemsRow}>
-                      {txn.items.map(item => (
+                      {txn.items.slice(0, 3).map(item => (
                         <View key={item.id} style={styles.itemChip}>
                           <Text style={styles.itemChipText}>{item.name}</Text>
                         </View>
                       ))}
                     </View>
-                  )}
+                  ) : null}
                 </View>
                 <View style={styles.txnAmountCol}>
                   <Text style={[styles.txnAmount, { color: txn.type === 'credit' ? theme.credit : theme.payment }]}>
                     {txn.type === 'credit' ? '+' : '-'}{formatCurrency(txn.amount)}
                   </Text>
-                  {txn.paymentMethod && (
-                    <Text style={styles.payMethod}>{txn.paymentMethod}</Text>
-                  )}
+                  {txn.paymentMethod ? (
+                    <View style={styles.methodBadge}>
+                      <Text style={styles.methodText}>{txn.paymentMethod}</Text>
+                    </View>
+                  ) : null}
                 </View>
               </Pressable>
             ))}
           </View>
         ))}
 
-        {filteredTransactions.length === 0 && (
+        {filteredTransactions.length === 0 ? (
           <View style={styles.emptyState}>
-            <MaterialIcons name="receipt-long" size={64} color={theme.border} />
+            <View style={styles.emptyIcon}>
+              <MaterialIcons name="receipt-long" size={40} color={theme.textMuted} />
+            </View>
             <Text style={styles.emptyText}>{t.noTransactions}</Text>
           </View>
-        )}
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -143,82 +159,94 @@ const styles = StyleSheet.create({
     backgroundColor: theme.background,
   },
   header: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingTop: 8,
-    paddingBottom: 12,
+    paddingBottom: 14,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: theme.textPrimary,
+    fontSize: 26,
+    fontWeight: '800',
+    color: theme.textDark,
+    letterSpacing: -0.3,
   },
   headerActions: {
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
+    gap: 10,
+    marginTop: 14,
   },
   addCreditBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: theme.credit,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: theme.borderRadius.sm,
-    gap: 4,
-  },
-  addCreditText: {
-    color: '#FFF',
-    fontSize: 13,
-    fontWeight: '600',
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 12,
+    gap: 6,
   },
   addPaymentBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: theme.payment,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: theme.borderRadius.sm,
-    gap: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderRadius: 12,
+    gap: 6,
   },
-  addPaymentText: {
+  addBtnText: {
     color: '#FFF',
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
   },
   summaryRow: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
-    gap: 10,
-    marginTop: 4,
+    paddingHorizontal: 20,
+    gap: 12,
   },
   summaryCard: {
     flex: 1,
-    backgroundColor: theme.surface,
-    borderRadius: theme.borderRadius.md,
-    padding: 14,
-    borderLeftWidth: 3,
-    ...theme.cardShadow,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12 },
+      android: { elevation: 2 },
+      default: {},
+    }),
+  },
+  summaryIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   summaryLabel: {
     fontSize: 12,
     color: theme.textMuted,
     fontWeight: '500',
+    marginTop: 10,
   },
   summaryAmount: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '700',
     marginTop: 4,
   },
   filterRow: {
-    marginTop: 14,
-    maxHeight: 44,
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    gap: 8,
+    marginTop: 18,
+    marginBottom: 4,
   },
   filterChip: {
-    paddingHorizontal: 18,
-    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
     borderRadius: 20,
-    backgroundColor: theme.surface,
-    borderWidth: 1,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
     borderColor: theme.border,
   },
   filterChipActive: {
@@ -233,28 +261,42 @@ const styles = StyleSheet.create({
   filterChipTextActive: {
     color: '#FFF',
   },
+  dateHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 22,
+    marginBottom: 12,
+    gap: 10,
+  },
+  dateHeaderLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: theme.border,
+  },
   dateHeader: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
-    color: theme.textSecondary,
-    marginTop: 20,
-    marginBottom: 8,
+    color: theme.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   txnCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: theme.surface,
+    backgroundColor: '#FFFFFF',
     padding: 14,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: 16,
     marginBottom: 8,
-    ...theme.cardShadow,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8 },
+      android: { elevation: 1 },
+      default: {},
+    }),
   },
   txnIcon: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -268,7 +310,7 @@ const styles = StyleSheet.create({
     color: theme.textDark,
   },
   txnNote: {
-    fontSize: 13,
+    fontSize: 12,
     color: theme.textMuted,
     marginTop: 2,
   },
@@ -297,10 +339,17 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-  payMethod: {
-    fontSize: 11,
+  methodBadge: {
+    backgroundColor: theme.borderLight,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginTop: 4,
+  },
+  methodText: {
+    fontSize: 10,
     color: theme.textMuted,
-    marginTop: 2,
+    fontWeight: '600',
     textTransform: 'capitalize',
   },
   emptyState: {
@@ -308,9 +357,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingTop: 80,
   },
+  emptyIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 22,
+    backgroundColor: theme.borderLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
   emptyText: {
     fontSize: 16,
     color: theme.textMuted,
-    marginTop: 12,
+    fontWeight: '500',
   },
 });

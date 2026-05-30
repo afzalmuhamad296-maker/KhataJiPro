@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, Platform } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../../constants/theme';
 import { useApp } from '../../contexts/AppContext';
 
@@ -28,10 +29,8 @@ export default function ReportsScreen() {
   const creditCount = filtered.filter(t => t.type === 'credit').length;
   const paymentCount = filtered.filter(t => t.type === 'debit').length;
 
-  // Top debtors
   const topDebtors = [...customers].filter(c => c.balance > 0).sort((a, b) => b.balance - a.balance).slice(0, 5);
 
-  // Daily breakdown (last 7 days)
   const dailyBreakdown = Array.from({ length: 7 }, (_, i) => {
     const date = new Date(Date.now() - i * 86400000).toISOString().split('T')[0];
     const dayTxns = transactions.filter(t => t.date === date);
@@ -46,26 +45,28 @@ export default function ReportsScreen() {
     <SafeAreaView edges={['top']} style={styles.container}>
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>{t.reports}</Text>
+          <Text style={styles.subtitle}>Business analytics overview</Text>
         </View>
 
         {/* Period Selector */}
         <View style={styles.periodRow}>
           {([
-            { key: 'daily', label: t.today },
-            { key: 'weekly', label: t.thisWeek },
-            { key: 'monthly', label: t.thisMonth },
+            { key: 'daily', label: t.today, icon: 'today' },
+            { key: 'weekly', label: t.thisWeek, icon: 'date-range' },
+            { key: 'monthly', label: t.thisMonth, icon: 'calendar-month' },
           ] as const).map(item => (
             <Pressable
               key={item.key}
               style={[styles.periodChip, period === item.key && styles.periodChipActive]}
               onPress={() => setPeriod(item.key)}
             >
+              <MaterialIcons name={item.icon as any} size={14} color={period === item.key ? '#FFF' : theme.textMuted} />
               <Text style={[styles.periodText, period === item.key && styles.periodTextActive]}>
                 {item.label}
               </Text>
@@ -75,95 +76,110 @@ export default function ReportsScreen() {
 
         {/* Summary Cards */}
         <View style={styles.summaryGrid}>
-          <View style={[styles.summaryCard, { backgroundColor: '#FFF5F5' }]}>
-            <MaterialIcons name="trending-up" size={24} color={theme.credit} />
+          <View style={styles.summaryCard}>
+            <LinearGradient colors={['#FEE2E2', '#FECACA']} style={styles.summaryCardIcon}>
+              <MaterialIcons name="trending-up" size={20} color={theme.credit} />
+            </LinearGradient>
             <Text style={styles.summaryLabel}>Credit Given</Text>
             <Text style={[styles.summaryValue, { color: theme.credit }]}>{formatCurrency(totalCredit)}</Text>
-            <Text style={styles.summaryCount}>{creditCount} transactions</Text>
+            <Text style={styles.summaryCount}>{creditCount} txns</Text>
           </View>
-          <View style={[styles.summaryCard, { backgroundColor: '#F0FFF4' }]}>
-            <MaterialIcons name="trending-down" size={24} color={theme.payment} />
-            <Text style={styles.summaryLabel}>Payments</Text>
+          <View style={styles.summaryCard}>
+            <LinearGradient colors={['#DCFCE7', '#BBF7D0']} style={styles.summaryCardIcon}>
+              <MaterialIcons name="trending-down" size={20} color={theme.payment} />
+            </LinearGradient>
+            <Text style={styles.summaryLabel}>Collected</Text>
             <Text style={[styles.summaryValue, { color: theme.payment }]}>{formatCurrency(totalPayments)}</Text>
-            <Text style={styles.summaryCount}>{paymentCount} transactions</Text>
+            <Text style={styles.summaryCount}>{paymentCount} txns</Text>
           </View>
         </View>
 
         {/* Outstanding Card */}
         <View style={styles.outstandingCard}>
-          <View style={styles.outstandingLeft}>
-            <Text style={styles.outstandingLabel}>Total Outstanding</Text>
-            <Text style={styles.outstandingValue}>{formatCurrency(outstanding)}</Text>
-          </View>
-          <View style={styles.outstandingRight}>
-            <MaterialIcons name="warning" size={24} color={theme.warningDark} />
-            <Text style={styles.outstandingCustomers}>{topDebtors.length} customers</Text>
-          </View>
+          <LinearGradient
+            colors={['#FFFBEB', '#FEF3C7']}
+            style={styles.outstandingGradient}
+          >
+            <View style={styles.outstandingLeft}>
+              <Text style={styles.outstandingLabel}>Total Outstanding</Text>
+              <Text style={styles.outstandingValue}>{formatCurrency(outstanding)}</Text>
+            </View>
+            <View style={styles.outstandingRight}>
+              <View style={styles.outstandingIconWrap}>
+                <MaterialIcons name="account-balance-wallet" size={22} color="#D97706" />
+              </View>
+              <Text style={styles.outstandingCustomers}>{topDebtors.length} customers</Text>
+            </View>
+          </LinearGradient>
         </View>
 
         {/* Daily Chart */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>7-Day Overview</Text>
-          <View style={styles.chartContainer}>
-            {dailyBreakdown.map((day, index) => (
-              <View key={index} style={styles.chartCol}>
-                <View style={styles.barsWrapper}>
-                  <View
-                    style={[
-                      styles.bar,
-                      styles.creditBar,
-                      { height: Math.max((day.credit / maxDailyAmount) * 100, 4) },
-                    ]}
-                  />
-                  <View
-                    style={[
-                      styles.bar,
-                      styles.debitBar,
-                      { height: Math.max((day.debit / maxDailyAmount) * 100, 4) },
-                    ]}
-                  />
+          <View style={styles.chartCard}>
+            <View style={styles.chartContainer}>
+              {dailyBreakdown.map((day, index) => (
+                <View key={index} style={styles.chartCol}>
+                  <View style={styles.barsWrapper}>
+                    <View
+                      style={[
+                        styles.bar,
+                        styles.creditBar,
+                        { height: Math.max((day.credit / maxDailyAmount) * 90, 4) },
+                      ]}
+                    />
+                    <View
+                      style={[
+                        styles.bar,
+                        styles.debitBar,
+                        { height: Math.max((day.debit / maxDailyAmount) * 90, 4) },
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.chartLabel}>{day.day}</Text>
                 </View>
-                <Text style={styles.chartLabel}>{day.day}</Text>
-              </View>
-            ))}
-          </View>
-          <View style={styles.legendRow}>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: theme.credit }]} />
-              <Text style={styles.legendText}>Credit</Text>
+              ))}
             </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: theme.payment }]} />
-              <Text style={styles.legendText}>Payment</Text>
+            <View style={styles.legendRow}>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: theme.credit }]} />
+                <Text style={styles.legendText}>Credit</Text>
+              </View>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: theme.payment }]} />
+                <Text style={styles.legendText}>Payment</Text>
+              </View>
             </View>
           </View>
         </View>
 
         {/* Top Debtors */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Top Outstanding Customers</Text>
-          {topDebtors.map((customer, index) => (
-            <View key={customer.id} style={styles.debtorRow}>
-              <Text style={styles.debtorRank}>#{index + 1}</Text>
-              <View style={styles.debtorAvatar}>
-                <Text style={styles.debtorAvatarText}>
-                  {customer.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                </Text>
-              </View>
-              <View style={styles.debtorInfo}>
-                <Text style={styles.debtorName}>{customer.name}</Text>
-                <View style={styles.debtorBar}>
-                  <View
-                    style={[
-                      styles.debtorBarFill,
-                      { width: `${(customer.balance / (topDebtors[0]?.balance || 1)) * 100}%` },
-                    ]}
-                  />
+          <Text style={styles.sectionTitle}>Top Outstanding</Text>
+          <View style={styles.debtorsList}>
+            {topDebtors.map((customer, index) => (
+              <View key={customer.id} style={styles.debtorRow}>
+                <View style={[styles.rankBadge, index === 0 && { backgroundColor: '#FEF3C7' }]}>
+                  <Text style={[styles.rankText, index === 0 && { color: '#D97706' }]}>#{index + 1}</Text>
                 </View>
+                <View style={styles.debtorInfo}>
+                  <Text style={styles.debtorName}>{customer.name}</Text>
+                  <View style={styles.debtorBar}>
+                    <LinearGradient
+                      colors={[theme.credit, '#F87171']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={[
+                        styles.debtorBarFill,
+                        { width: `${(customer.balance / (topDebtors[0]?.balance || 1)) * 100}%` },
+                      ]}
+                    />
+                  </View>
+                </View>
+                <Text style={styles.debtorAmount}>{formatCurrency(customer.balance)}</Text>
               </View>
-              <Text style={styles.debtorAmount}>{formatCurrency(customer.balance)}</Text>
-            </View>
-          ))}
+            ))}
+          </View>
         </View>
 
         {/* Quick Stats */}
@@ -171,17 +187,23 @@ export default function ReportsScreen() {
           <Text style={styles.sectionTitle}>Quick Stats</Text>
           <View style={styles.statsGrid}>
             <View style={styles.statItem}>
-              <MaterialIcons name="people" size={20} color={theme.primary} />
+              <LinearGradient colors={['#E8F5ED', '#D1FAE5']} style={styles.statIcon}>
+                <MaterialIcons name="people" size={20} color={theme.primary} />
+              </LinearGradient>
               <Text style={styles.statItemValue}>{customers.length}</Text>
-              <Text style={styles.statItemLabel}>Total Customers</Text>
+              <Text style={styles.statItemLabel}>Customers</Text>
             </View>
             <View style={styles.statItem}>
-              <MaterialIcons name="receipt" size={20} color={theme.primary} />
+              <LinearGradient colors={['#DBEAFE', '#BFDBFE']} style={styles.statIcon}>
+                <MaterialIcons name="receipt" size={20} color="#2563EB" />
+              </LinearGradient>
               <Text style={styles.statItemValue}>{transactions.length}</Text>
               <Text style={styles.statItemLabel}>Transactions</Text>
             </View>
             <View style={styles.statItem}>
-              <MaterialIcons name="calculate" size={20} color={theme.primary} />
+              <LinearGradient colors={['#F3E8FF', '#E9D5FF']} style={styles.statIcon}>
+                <MaterialIcons name="calculate" size={20} color="#7C3AED" />
+              </LinearGradient>
               <Text style={styles.statItemValue}>
                 {formatCurrency(Math.round(totalCredit / Math.max(creditCount, 1)))}
               </Text>
@@ -200,28 +222,37 @@ const styles = StyleSheet.create({
     backgroundColor: theme.background,
   },
   header: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingTop: 8,
     paddingBottom: 4,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: theme.textPrimary,
+    fontSize: 26,
+    fontWeight: '800',
+    color: theme.textDark,
+    letterSpacing: -0.3,
+  },
+  subtitle: {
+    fontSize: 13,
+    color: theme.textMuted,
+    marginTop: 2,
   },
   periodRow: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     gap: 8,
-    marginTop: 14,
+    marginTop: 18,
   },
   periodChip: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: theme.borderRadius.sm,
-    backgroundColor: theme.surface,
+    flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 11,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
     borderColor: theme.border,
   },
   periodChipActive: {
@@ -238,21 +269,33 @@ const styles = StyleSheet.create({
   },
   summaryGrid: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
-    gap: 10,
-    marginTop: 16,
+    paddingHorizontal: 20,
+    gap: 12,
+    marginTop: 18,
   },
   summaryCard: {
     flex: 1,
     padding: 16,
-    borderRadius: theme.borderRadius.md,
-    ...theme.cardShadow,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12 },
+      android: { elevation: 2 },
+      default: {},
+    }),
+  },
+  summaryCardIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   summaryLabel: {
     fontSize: 12,
     color: theme.textMuted,
     fontWeight: '500',
-    marginTop: 8,
+    marginTop: 12,
   },
   summaryValue: {
     fontSize: 20,
@@ -265,14 +308,15 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   outstandingCard: {
-    flexDirection: 'row',
-    marginHorizontal: 16,
+    marginHorizontal: 20,
     marginTop: 12,
-    backgroundColor: '#FFFDE7',
-    borderRadius: theme.borderRadius.md,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#FFF9C4',
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  outstandingGradient: {
+    flexDirection: 'row',
+    padding: 18,
+    alignItems: 'center',
   },
   outstandingLeft: {
     flex: 1,
@@ -283,12 +327,20 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   outstandingValue: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: theme.warningDark,
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#D97706',
     marginTop: 4,
+    letterSpacing: -0.3,
   },
   outstandingRight: {
+    alignItems: 'center',
+  },
+  outstandingIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: 'rgba(217,119,6,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -296,26 +348,34 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: theme.textMuted,
     marginTop: 4,
+    fontWeight: '500',
   },
   section: {
-    marginTop: 24,
-    paddingHorizontal: 16,
+    marginTop: 28,
+    paddingHorizontal: 20,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '700',
     color: theme.textDark,
     marginBottom: 14,
+    letterSpacing: -0.2,
+  },
+  chartCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 20,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12 },
+      android: { elevation: 2 },
+      default: {},
+    }),
   },
   chartContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    height: 140,
-    backgroundColor: theme.surface,
-    borderRadius: theme.borderRadius.md,
-    padding: 16,
-    ...theme.cardShadow,
+    height: 120,
   },
   chartCol: {
     flex: 1,
@@ -329,8 +389,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   bar: {
-    width: 12,
-    borderRadius: 4,
+    width: 14,
+    borderRadius: 5,
     minHeight: 4,
   },
   creditBar: {
@@ -342,14 +402,17 @@ const styles = StyleSheet.create({
   chartLabel: {
     fontSize: 10,
     color: theme.textMuted,
-    marginTop: 6,
+    marginTop: 8,
     fontWeight: '600',
   },
   legendRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 20,
-    marginTop: 12,
+    gap: 24,
+    marginTop: 16,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: theme.borderLight,
   },
   legendItem: {
     flexDirection: 'row',
@@ -366,31 +429,36 @@ const styles = StyleSheet.create({
     color: theme.textMuted,
     fontWeight: '500',
   },
+  debtorsList: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 6,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12 },
+      android: { elevation: 2 },
+      default: {},
+    }),
+  },
   debtorRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
     borderBottomWidth: 1,
     borderBottomColor: theme.borderLight,
   },
-  debtorRank: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: theme.textMuted,
-    width: 28,
-  },
-  debtorAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: theme.backgroundSecondary,
+  rankBadge: {
+    width: 30,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: theme.borderLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  debtorAvatarText: {
-    fontSize: 13,
+  rankText: {
+    fontSize: 11,
     fontWeight: '700',
-    color: theme.primary,
+    color: theme.textMuted,
   },
   debtorInfo: {
     flex: 1,
@@ -405,12 +473,11 @@ const styles = StyleSheet.create({
     height: 5,
     backgroundColor: theme.borderLight,
     borderRadius: 3,
-    marginTop: 4,
+    marginTop: 6,
     overflow: 'hidden',
   },
   debtorBarFill: {
     height: '100%',
-    backgroundColor: theme.credit,
     borderRadius: 3,
   },
   debtorAmount: {
@@ -425,22 +492,34 @@ const styles = StyleSheet.create({
   },
   statItem: {
     flex: 1,
-    backgroundColor: theme.surface,
-    borderRadius: theme.borderRadius.md,
-    padding: 14,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
     alignItems: 'center',
-    ...theme.cardShadow,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12 },
+      android: { elevation: 2 },
+      default: {},
+    }),
+  },
+  statIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statItemValue: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
     color: theme.textDark,
-    marginTop: 6,
+    marginTop: 8,
   },
   statItemLabel: {
     fontSize: 11,
     color: theme.textMuted,
     marginTop: 4,
     textAlign: 'center',
+    fontWeight: '500',
   },
 });

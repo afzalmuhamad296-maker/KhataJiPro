@@ -1,7 +1,7 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Platform } from 'react-native';
+import { Platform, View } from 'react-native';
 import { theme } from '../../constants/theme';
 
 export default function TabLayout() {
@@ -9,25 +9,24 @@ export default function TabLayout() {
 
   const tabBarStyle = {
     height: Platform.select({
-      ios: insets.bottom + 60,
-      android: insets.bottom + 60,
-      default: 70,
+      ios: insets.bottom + 62,
+      android: insets.bottom + 62,
+      default: 72,
     }),
-    paddingTop: 8,
+    paddingTop: 10,
     paddingBottom: Platform.select({
       ios: insets.bottom + 8,
       android: insets.bottom + 8,
-      default: 8,
+      default: 10,
     }),
     paddingHorizontal: 8,
     backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: theme.border,
-    elevation: 8,
+    borderTopWidth: 0,
+    elevation: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
+    shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.06,
-    shadowRadius: 8,
+    shadowRadius: 16,
   };
 
   return (
@@ -40,6 +39,7 @@ export default function TabLayout() {
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: '600',
+          marginTop: 2,
         },
       }}
     >
@@ -47,8 +47,10 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="home" size={size} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? { backgroundColor: theme.primary + '14', borderRadius: 12, padding: 6 } : { padding: 6 }}>
+              <MaterialIcons name="home-filled" size={22} color={color} />
+            </View>
           ),
         }}
       />
@@ -56,8 +58,10 @@ export default function TabLayout() {
         name="customers"
         options={{
           title: 'Customers',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="people" size={size} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? { backgroundColor: theme.primary + '14', borderRadius: 12, padding: 6 } : { padding: 6 }}>
+              <MaterialIcons name="people" size={22} color={color} />
+            </View>
           ),
         }}
       />
@@ -65,8 +69,10 @@ export default function TabLayout() {
         name="udhaar"
         options={{
           title: 'Udhaar',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="account-balance-wallet" size={size} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? { backgroundColor: theme.primary + '14', borderRadius: 12, padding: 6 } : { padding: 6 }}>
+              <MaterialIcons name="account-balance-wallet" size={22} color={color} />
+            </View>
           ),
         }}
       />
@@ -74,8 +80,10 @@ export default function TabLayout() {
         name="reports"
         options={{
           title: 'Reports',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="bar-chart" size={size} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? { backgroundColor: theme.primary + '14', borderRadius: 12, padding: 6 } : { padding: 6 }}>
+              <MaterialIcons name="bar-chart" size={22} color={color} />
+            </View>
           ),
         }}
       />
@@ -83,8 +91,10 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="settings" size={size} color={color} />
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? { backgroundColor: theme.primary + '14', borderRadius: 12, padding: 6 } : { padding: 6 }}>
+              <MaterialIcons name="settings" size={22} color={color} />
+            </View>
           ),
         }}
       />
