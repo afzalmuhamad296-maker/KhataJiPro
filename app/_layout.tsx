@@ -27,6 +27,7 @@ export default function RootLayout() {
           <Stack.Screen name="suppliers" options={{ presentation: 'card' }} />
           <Stack.Screen name="sales-report" options={{ presentation: 'card' }} />
           <Stack.Screen name="more-features" options={{ presentation: 'card' }} />
+          <Stack.Screen name="app-lock" options={{ presentation: 'card' }} />
         </Stack>
       </AppProvider>
     </AlertProvider>

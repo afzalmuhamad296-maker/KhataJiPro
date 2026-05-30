@@ -41,7 +41,8 @@ export default function SettingsScreen() {
     {
       title: 'SECURITY',
       items: [
-        { icon: 'lock' as const, label: t.pin, value: settings.pin ? 'Enabled' : 'Disabled', onPress: () => {} },
+        { icon: 'lock' as const, label: 'App Lock', value: 'PIN + Biometric', onPress: () => router.push('/app-lock') },
+        { icon: 'fingerprint' as const, label: 'Biometric', value: 'Face ID / Fingerprint', onPress: () => router.push('/app-lock') },
       ],
     },
     {
