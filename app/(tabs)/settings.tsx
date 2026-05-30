@@ -66,6 +66,7 @@ export default function SettingsScreen() {
         { icon: 'auto-awesome' as const, label: 'AI Insights', value: '', onPress: () => router.push('/insights') },
         { icon: 'send' as const, label: 'Bulk SMS', value: '', onPress: () => router.push('/bulk-sms') },
         { icon: 'account-balance-wallet' as const, label: 'Payment Methods', value: '', onPress: () => router.push('/payment-methods') },
+        { icon: 'link' as const, label: 'Pay Links', value: '', onPress: () => router.push('/pay-link') },
       ],
     },
     {
