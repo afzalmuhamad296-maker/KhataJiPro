@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, Platform } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, Platform, Dimensions } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -7,13 +7,15 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../../constants/theme';
 import { useApp } from '../../contexts/AppContext';
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { customers, transactions, settings, t, formatCurrency, getTodayStats } = useApp();
   const stats = getTodayStats();
 
-  const recentTransactions = transactions.slice(0, 6);
+  const recentTransactions = transactions.slice(0, 8);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -22,6 +24,15 @@ export default function DashboardScreen() {
     return 'Good Evening';
   };
 
+  const thisWeekCredit = transactions
+    .filter(tx => tx.type === 'credit' && new Date(tx.date) >= new Date(Date.now() - 7 * 86400000))
+    .reduce((s, tx) => s + tx.amount, 0);
+  const thisWeekPayment = transactions
+    .filter(tx => tx.type === 'debit' && new Date(tx.date) >= new Date(Date.now() - 7 * 86400000))
+    .reduce((s, tx) => s + tx.amount, 0);
+  const settledCustomers = customers.filter(c => c.balance <= 0).length;
+  const pendingCustomers = customers.filter(c => c.balance > 0).length;
+
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
       <ScrollView
@@ -29,106 +40,230 @@ export default function DashboardScreen() {
         contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Gradient Header */}
+        {/* Large Gradient Header */}
         <LinearGradient
-          colors={['#0D7C4A', '#065F37', '#043D25']}
+          colors={['#0A6B3F', '#0D7C4A', '#065F37', '#043D25']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.headerGradient}
         >
           <View style={styles.headerTop}>
             <View>
-              <Text style={styles.greeting}>{getGreeting()}</Text>
+              <Text style={styles.greeting}>{getGreeting()} 👋</Text>
               <Text style={styles.shopName}>{settings.shopName}</Text>
+              <Text style={styles.ownerName}>{settings.ownerName}</Text>
             </View>
-            <Pressable style={styles.notifButton}>
-              <MaterialIcons name="notifications-none" size={22} color="rgba(255,255,255,0.9)" />
-            </Pressable>
+            <View style={styles.headerRight}>
+              <Pressable style={({ pressed }) => [styles.planBadge, pressed && { opacity: 0.8 }]} onPress={() => router.push('/plans')}>
+                <MaterialIcons name="workspace-premium" size={14} color="#FFD700" />
+                <Text style={styles.planBadgeText}>FREE</Text>
+              </Pressable>
+              <Pressable style={styles.notifButton}>
+                <MaterialIcons name="notifications-none" size={22} color="rgba(255,255,255,0.9)" />
+                <View style={styles.notifDot} />
+              </Pressable>
+            </View>
           </View>
 
-          {/* Stats inside header */}
+          {/* Big Stats */}
           <View style={styles.heroStats}>
             <View style={styles.heroStatMain}>
-              <Text style={styles.heroStatLabel}>Total Outstanding</Text>
+              <Text style={styles.heroStatLabel}>Total Outstanding Balance</Text>
               <Text style={styles.heroStatValue}>{formatCurrency(stats.outstanding)}</Text>
-              <Text style={styles.heroStatSub}>{stats.totalCustomers} active customers</Text>
+              <View style={styles.heroSubRow}>
+                <View style={styles.heroSubItem}>
+                  <View style={[styles.heroSubDot, { backgroundColor: '#4ADE80' }]} />
+                  <Text style={styles.heroSubText}>{stats.totalCustomers} Customers</Text>
+                </View>
+                <View style={styles.heroSubItem}>
+                  <View style={[styles.heroSubDot, { backgroundColor: '#FCD34D' }]} />
+                  <Text style={styles.heroSubText}>{pendingCustomers} Pending</Text>
+                </View>
+                <View style={styles.heroSubItem}>
+                  <View style={[styles.heroSubDot, { backgroundColor: '#86EFAC' }]} />
+                  <Text style={styles.heroSubText}>{settledCustomers} Clear</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* Inline Mini Stats */}
+          <View style={styles.miniStatsRow}>
+            <View style={styles.miniStat}>
+              <Text style={styles.miniStatLabel}>This Week Credit</Text>
+              <Text style={styles.miniStatValue}>{formatCurrency(thisWeekCredit)}</Text>
+            </View>
+            <View style={styles.miniStatDivider} />
+            <View style={styles.miniStat}>
+              <Text style={styles.miniStatLabel}>This Week Collection</Text>
+              <Text style={styles.miniStatValue}>{formatCurrency(thisWeekPayment)}</Text>
             </View>
           </View>
         </LinearGradient>
 
-        {/* Floating Summary Cards */}
+        {/* Floating Today Cards */}
         <View style={styles.floatingCards}>
           <View style={styles.floatingCard}>
-            <View style={[styles.floatingCardDot, { backgroundColor: theme.credit }]} />
-            <Text style={styles.floatingCardLabel}>{t.todayCredit}</Text>
-            <Text style={[styles.floatingCardValue, { color: theme.credit }]}>
-              {formatCurrency(stats.todayCredit)}
-            </Text>
+            <LinearGradient colors={['#FEE2E2', '#FECACA']} style={styles.floatingCardIcon}>
+              <MaterialIcons name="north-east" size={20} color={theme.credit} />
+            </LinearGradient>
+            <View>
+              <Text style={styles.floatingCardLabel}>{t.todayCredit}</Text>
+              <Text style={[styles.floatingCardValue, { color: theme.credit }]}>
+                {formatCurrency(stats.todayCredit)}
+              </Text>
+            </View>
           </View>
           <View style={styles.floatingCardDivider} />
           <View style={styles.floatingCard}>
-            <View style={[styles.floatingCardDot, { backgroundColor: theme.payment }]} />
-            <Text style={styles.floatingCardLabel}>{t.todayCollection}</Text>
-            <Text style={[styles.floatingCardValue, { color: theme.payment }]}>
-              {formatCurrency(stats.todayCollection)}
-            </Text>
+            <LinearGradient colors={['#DCFCE7', '#BBF7D0']} style={styles.floatingCardIcon}>
+              <MaterialIcons name="south-west" size={20} color={theme.payment} />
+            </LinearGradient>
+            <View>
+              <Text style={styles.floatingCardLabel}>{t.todayCollection}</Text>
+              <Text style={[styles.floatingCardValue, { color: theme.payment }]}>
+                {formatCurrency(stats.todayCollection)}
+              </Text>
+            </View>
           </View>
         </View>
 
-        {/* Quick Actions */}
+        {/* Upgrade Banner */}
+        <Pressable style={({ pressed }) => [styles.upgradeBanner, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]} onPress={() => router.push('/plans')}>
+          <LinearGradient
+            colors={['#FEF3C7', '#FDE68A', '#FCD34D']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.upgradeBannerGradient}
+          >
+            <View style={styles.upgradeLeft}>
+              <View style={styles.upgradeIconWrap}>
+                <MaterialIcons name="workspace-premium" size={28} color="#B45309" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.upgradeTitle}>Upgrade to Pro</Text>
+                <Text style={styles.upgradeDesc}>Unlock AI features, unlimited customers, PDF exports & more</Text>
+              </View>
+            </View>
+            <MaterialIcons name="arrow-forward-ios" size={16} color="#92400E" />
+          </LinearGradient>
+        </Pressable>
+
+        {/* Quick Actions - Bigger Grid */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t.quickActions}</Text>
           <View style={styles.quickGrid}>
             <Pressable style={({ pressed }) => [styles.quickAction, pressed && styles.quickActionPressed]} onPress={() => router.push('/add-credit')}>
               <LinearGradient colors={['#FEE2E2', '#FECACA']} style={styles.quickActionIcon}>
-                <MaterialIcons name="add-circle-outline" size={24} color={theme.credit} />
+                <MaterialIcons name="add-circle-outline" size={26} color={theme.credit} />
               </LinearGradient>
               <Text style={styles.quickActionLabel}>{t.addCredit}</Text>
             </Pressable>
             <Pressable style={({ pressed }) => [styles.quickAction, pressed && styles.quickActionPressed]} onPress={() => router.push('/add-payment')}>
               <LinearGradient colors={['#DCFCE7', '#BBF7D0']} style={styles.quickActionIcon}>
-                <MaterialIcons name="payments" size={24} color={theme.payment} />
+                <MaterialIcons name="payments" size={26} color={theme.payment} />
               </LinearGradient>
               <Text style={styles.quickActionLabel}>{t.addPayment}</Text>
             </Pressable>
+            <Pressable style={({ pressed }) => [styles.quickAction, pressed && styles.quickActionPressed]} onPress={() => router.push('/add-customer')}>
+              <LinearGradient colors={['#DBEAFE', '#BFDBFE']} style={styles.quickActionIcon}>
+                <MaterialIcons name="person-add" size={26} color="#2563EB" />
+              </LinearGradient>
+              <Text style={styles.quickActionLabel}>New Customer</Text>
+            </Pressable>
             <Pressable style={({ pressed }) => [styles.quickAction, pressed && styles.quickActionPressed]} onPress={() => router.push('/voice-entry')}>
               <LinearGradient colors={['#F3E8FF', '#E9D5FF']} style={styles.quickActionIcon}>
-                <MaterialIcons name="mic" size={24} color="#7C3AED" />
+                <MaterialIcons name="mic" size={26} color="#7C3AED" />
               </LinearGradient>
-              <Text style={styles.quickActionLabel}>Voice</Text>
+              <Text style={styles.quickActionLabel}>Voice Entry</Text>
             </Pressable>
+          </View>
+          <View style={[styles.quickGrid, { marginTop: 18 }]}>
             <Pressable style={({ pressed }) => [styles.quickAction, pressed && styles.quickActionPressed]} onPress={() => router.push('/qr-scanner')}>
               <LinearGradient colors={['#DBEAFE', '#BFDBFE']} style={styles.quickActionIcon}>
-                <MaterialIcons name="qr-code-scanner" size={24} color="#2563EB" />
+                <MaterialIcons name="qr-code-scanner" size={26} color="#2563EB" />
               </LinearGradient>
               <Text style={styles.quickActionLabel}>QR Scan</Text>
             </Pressable>
-          </View>
-          <View style={[styles.quickGrid, { marginTop: 16 }]}>
             <Pressable style={({ pressed }) => [styles.quickAction, pressed && styles.quickActionPressed]} onPress={() => router.push('/chat-assistant')}>
               <LinearGradient colors={['#E8F5ED', '#D1FAE5']} style={styles.quickActionIcon}>
-                <MaterialIcons name="smart-toy" size={24} color={theme.primary} />
+                <MaterialIcons name="smart-toy" size={26} color={theme.primary} />
               </LinearGradient>
               <Text style={styles.quickActionLabel}>AI Chat</Text>
             </Pressable>
             <Pressable style={({ pressed }) => [styles.quickAction, pressed && styles.quickActionPressed]} onPress={() => router.push('/invoice')}>
               <LinearGradient colors={['#FEF3C7', '#FDE68A']} style={styles.quickActionIcon}>
-                <MaterialIcons name="receipt-long" size={24} color="#D97706" />
+                <MaterialIcons name="receipt-long" size={26} color="#D97706" />
               </LinearGradient>
               <Text style={styles.quickActionLabel}>Invoice</Text>
             </Pressable>
             <Pressable style={({ pressed }) => [styles.quickAction, pressed && styles.quickActionPressed]} onPress={() => router.push('/insights')}>
               <LinearGradient colors={['#FCE7F3', '#FBCFE8']} style={styles.quickActionIcon}>
-                <MaterialIcons name="auto-awesome" size={24} color="#BE185D" />
+                <MaterialIcons name="auto-awesome" size={26} color="#BE185D" />
               </LinearGradient>
               <Text style={styles.quickActionLabel}>Insights</Text>
             </Pressable>
+          </View>
+          <View style={[styles.quickGrid, { marginTop: 18 }]}>
+            <Pressable style={({ pressed }) => [styles.quickAction, pressed && styles.quickActionPressed]} onPress={() => router.push('/reminders')}>
+              <LinearGradient colors={['#FEE2E2', '#FED7AA']} style={styles.quickActionIcon}>
+                <MaterialIcons name="notifications-active" size={26} color="#DC2626" />
+              </LinearGradient>
+              <Text style={styles.quickActionLabel}>Reminders</Text>
+            </Pressable>
+            <Pressable style={({ pressed }) => [styles.quickAction, pressed && styles.quickActionPressed]} onPress={() => router.push('/expense-tracker')}>
+              <LinearGradient colors={['#E0E7FF', '#C7D2FE']} style={styles.quickActionIcon}>
+                <MaterialIcons name="account-balance-wallet" size={26} color="#4338CA" />
+              </LinearGradient>
+              <Text style={styles.quickActionLabel}>Expenses</Text>
+            </Pressable>
+            <Pressable style={({ pressed }) => [styles.quickAction, pressed && styles.quickActionPressed]} onPress={() => router.push('/stock')}>
+              <LinearGradient colors={['#CCFBF1', '#99F6E4']} style={styles.quickActionIcon}>
+                <MaterialIcons name="inventory" size={26} color="#0D9488" />
+              </LinearGradient>
+              <Text style={styles.quickActionLabel}>Stock</Text>
+            </Pressable>
             <Pressable style={({ pressed }) => [styles.quickAction, pressed && styles.quickActionPressed]} onPress={() => router.push('/more-features')}>
               <LinearGradient colors={['#F1F5F9', '#E2E8F0']} style={styles.quickActionIcon}>
-                <MaterialIcons name="grid-view" size={24} color="#64748B" />
+                <MaterialIcons name="grid-view" size={26} color="#64748B" />
               </LinearGradient>
               <Text style={styles.quickActionLabel}>More</Text>
             </Pressable>
+          </View>
+        </View>
+
+        {/* Business Overview Cards */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Business Overview</Text>
+          <View style={styles.overviewGrid}>
+            <View style={styles.overviewCard}>
+              <LinearGradient colors={['#E8F5ED', '#D1FAE5']} style={styles.overviewIconBg}>
+                <MaterialIcons name="people" size={22} color={theme.primary} />
+              </LinearGradient>
+              <Text style={styles.overviewValue}>{customers.length}</Text>
+              <Text style={styles.overviewLabel}>Total Customers</Text>
+            </View>
+            <View style={styles.overviewCard}>
+              <LinearGradient colors={['#DBEAFE', '#BFDBFE']} style={styles.overviewIconBg}>
+                <MaterialIcons name="receipt" size={22} color="#2563EB" />
+              </LinearGradient>
+              <Text style={styles.overviewValue}>{transactions.length}</Text>
+              <Text style={styles.overviewLabel}>Transactions</Text>
+            </View>
+            <View style={styles.overviewCard}>
+              <LinearGradient colors={['#FEF3C7', '#FDE68A']} style={styles.overviewIconBg}>
+                <MaterialIcons name="trending-up" size={22} color="#D97706" />
+              </LinearGradient>
+              <Text style={styles.overviewValue}>{formatCurrency(thisWeekCredit)}</Text>
+              <Text style={styles.overviewLabel}>Week Credit</Text>
+            </View>
+            <View style={styles.overviewCard}>
+              <LinearGradient colors={['#DCFCE7', '#BBF7D0']} style={styles.overviewIconBg}>
+                <MaterialIcons name="trending-down" size={22} color={theme.payment} />
+              </LinearGradient>
+              <Text style={styles.overviewValue}>{formatCurrency(thisWeekPayment)}</Text>
+              <Text style={styles.overviewLabel}>Week Collection</Text>
+            </View>
           </View>
         </View>
 
@@ -145,15 +280,15 @@ export default function DashboardScreen() {
             {customers
               .filter(c => c.balance > 0)
               .sort((a, b) => b.balance - a.balance)
-              .slice(0, 5)
+              .slice(0, 6)
               .map((customer, index) => (
                 <Pressable
                   key={customer.id}
                   style={({ pressed }) => [styles.customerRow, pressed && { opacity: 0.7, transform: [{ scale: 0.98 }] }]}
                   onPress={() => router.push(`/ledger/${customer.id}`)}
                 >
-                  <View style={[styles.avatar, { backgroundColor: index % 2 === 0 ? '#E8F5ED' : '#FEF3C7' }]}>
-                    <Text style={[styles.avatarText, { color: index % 2 === 0 ? theme.primary : '#D97706' }]}>
+                  <View style={[styles.avatar, { backgroundColor: ['#E8F5ED', '#FEF3C7', '#DBEAFE', '#F3E8FF', '#FCE7F3', '#FEE2E2'][index % 6] }]}>
+                    <Text style={[styles.avatarText, { color: [theme.primary, '#D97706', '#2563EB', '#7C3AED', '#BE185D', '#DC2626'][index % 6] }]}>
                       {customer.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
                     </Text>
                   </View>
@@ -174,7 +309,13 @@ export default function DashboardScreen() {
 
         {/* Recent Activity */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t.recentActivity}</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>{t.recentActivity}</Text>
+            <Pressable onPress={() => router.push('/(tabs)/udhaar')} style={styles.seeAllBtn}>
+              <Text style={styles.seeAllText}>View All</Text>
+              <MaterialIcons name="chevron-right" size={16} color={theme.primary} />
+            </Pressable>
+          </View>
           <View style={styles.activityCard}>
             {recentTransactions.map((txn, index) => (
               <View key={txn.id} style={[styles.transactionRow, index < recentTransactions.length - 1 && styles.transactionRowBorder]}>
@@ -199,6 +340,14 @@ export default function DashboardScreen() {
             ))}
           </View>
         </View>
+
+        {/* Footer CTA */}
+        <View style={styles.footerCta}>
+          <Pressable style={({ pressed }) => [styles.footerBtn, pressed && { opacity: 0.9 }]} onPress={() => router.push('/plans')}>
+            <MaterialIcons name="diamond" size={20} color={theme.primary} />
+            <Text style={styles.footerBtnText}>View Plans & Pricing</Text>
+          </Pressable>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -212,100 +361,222 @@ const styles = StyleSheet.create({
   // Header
   headerGradient: {
     paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 48,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
+    paddingTop: 12,
+    paddingBottom: 60,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
   },
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   greeting: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(255,255,255,0.75)',
     fontWeight: '500',
   },
   shopName: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '800',
     color: '#FFFFFF',
-    marginTop: 3,
+    marginTop: 4,
     letterSpacing: -0.3,
+  },
+  ownerName: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.55)',
+    marginTop: 2,
+  },
+  headerRight: {
+    alignItems: 'flex-end',
+    gap: 10,
+  },
+  planBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,215,0,0.3)',
+  },
+  planBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFD700',
   },
   notifButton: {
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  notifDot: {
+    position: 'absolute',
+    top: 10,
+    right: 12,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#EF4444',
+    borderWidth: 1.5,
+    borderColor: '#065F37',
   },
   heroStats: {
-    marginTop: 24,
+    marginTop: 28,
   },
   heroStatMain: {
     alignItems: 'center',
   },
   heroStatLabel: {
     fontSize: 13,
-    color: 'rgba(255,255,255,0.65)',
+    color: 'rgba(255,255,255,0.6)',
     fontWeight: '500',
   },
   heroStatValue: {
-    fontSize: 32,
+    fontSize: 36,
     fontWeight: '800',
     color: '#FFFFFF',
-    marginTop: 4,
+    marginTop: 6,
     letterSpacing: -0.5,
   },
-  heroStatSub: {
-    fontSize: 13,
+  heroSubRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginTop: 12,
+  },
+  heroSubItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  heroSubDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  heroSubText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.6)',
+    fontWeight: '500',
+  },
+  miniStatsRow: {
+    flexDirection: 'row',
+    marginTop: 24,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  miniStat: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  miniStatLabel: {
+    fontSize: 11,
     color: 'rgba(255,255,255,0.55)',
+    fontWeight: '500',
+  },
+  miniStatValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
     marginTop: 4,
+  },
+  miniStatDivider: {
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.15)',
   },
 
   // Floating Cards
   floatingCards: {
     flexDirection: 'row',
     marginHorizontal: 20,
-    marginTop: -28,
+    marginTop: -32,
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 18,
     ...Platform.select({
-      ios: { shadowColor: '#0D7C4A', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.1, shadowRadius: 20 },
-      android: { elevation: 8 },
-      default: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 16 },
+      ios: { shadowColor: '#0D7C4A', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.12, shadowRadius: 24 },
+      android: { elevation: 10 },
+      default: { shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.1, shadowRadius: 20 },
     }),
   },
   floatingCard: {
     flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
   },
-  floatingCardDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginBottom: 8,
+  floatingCardIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   floatingCardLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: theme.textMuted,
     fontWeight: '500',
   },
   floatingCardValue: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
-    marginTop: 4,
+    marginTop: 2,
   },
   floatingCardDivider: {
     width: 1,
     backgroundColor: theme.borderLight,
-    marginHorizontal: 8,
+    marginHorizontal: 4,
+  },
+
+  // Upgrade Banner
+  upgradeBanner: {
+    marginHorizontal: 20,
+    marginTop: 20,
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
+  upgradeBannerGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+  },
+  upgradeLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  upgradeIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: 'rgba(180,83,9,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  upgradeTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#78350F',
+  },
+  upgradeDesc: {
+    fontSize: 12,
+    color: '#92400E',
+    marginTop: 2,
+    lineHeight: 17,
   },
 
   // Quick Actions
@@ -320,7 +591,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   sectionTitle: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '700',
     color: theme.textDark,
     marginBottom: 14,
@@ -346,12 +617,12 @@ const styles = StyleSheet.create({
   },
   quickActionPressed: {
     opacity: 0.7,
-    transform: [{ scale: 0.95 }],
+    transform: [{ scale: 0.93 }],
   },
   quickActionIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
+    width: 60,
+    height: 60,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -361,6 +632,44 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 8,
     textAlign: 'center',
+  },
+
+  // Business Overview
+  overviewGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  overviewCard: {
+    width: (SCREEN_WIDTH - 52) / 2,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 16,
+    alignItems: 'flex-start',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12 },
+      android: { elevation: 3 },
+      default: {},
+    }),
+  },
+  overviewIconBg: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  overviewValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: theme.textDark,
+    marginTop: 12,
+  },
+  overviewLabel: {
+    fontSize: 12,
+    color: theme.textMuted,
+    fontWeight: '500',
+    marginTop: 4,
   },
 
   // Customers
@@ -382,9 +691,9 @@ const styles = StyleSheet.create({
     borderBottomColor: theme.borderLight,
   },
   avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 46,
+    height: 46,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -449,8 +758,8 @@ const styles = StyleSheet.create({
     borderBottomColor: theme.borderLight,
   },
   txnIcon: {
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
@@ -480,5 +789,27 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: theme.textLight,
     marginTop: 2,
+  },
+
+  // Footer
+  footerCta: {
+    marginTop: 24,
+    paddingHorizontal: 20,
+  },
+  footerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 16,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: theme.primary + '30',
+  },
+  footerBtnText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: theme.primary,
   },
 });
