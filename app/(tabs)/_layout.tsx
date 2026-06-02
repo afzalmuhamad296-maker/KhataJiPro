@@ -3,9 +3,11 @@ import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Platform, View } from 'react-native';
 import { theme } from '../../constants/theme';
+import { useApp } from '../../contexts/AppContext';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const { t } = useApp();
 
   const tabBarStyle = {
     height: Platform.select({
@@ -46,7 +48,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
+          title: t.home,
           tabBarIcon: ({ color, focused }) => (
             <View style={focused ? { backgroundColor: theme.primary + '14', borderRadius: 12, padding: 6 } : { padding: 6 }}>
               <MaterialIcons name="home-filled" size={22} color={color} />
@@ -57,7 +59,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="customers"
         options={{
-          title: 'Customers',
+          title: t.customers,
           tabBarIcon: ({ color, focused }) => (
             <View style={focused ? { backgroundColor: theme.primary + '14', borderRadius: 12, padding: 6 } : { padding: 6 }}>
               <MaterialIcons name="people" size={22} color={color} />
@@ -68,7 +70,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="udhaar"
         options={{
-          title: 'Udhaar',
+          title: t.udhaar,
           tabBarIcon: ({ color, focused }) => (
             <View style={focused ? { backgroundColor: theme.primary + '14', borderRadius: 12, padding: 6 } : { padding: 6 }}>
               <MaterialIcons name="account-balance-wallet" size={22} color={color} />
@@ -79,7 +81,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="reports"
         options={{
-          title: 'Reports',
+          title: t.reports,
           tabBarIcon: ({ color, focused }) => (
             <View style={focused ? { backgroundColor: theme.primary + '14', borderRadius: 12, padding: 6 } : { padding: 6 }}>
               <MaterialIcons name="bar-chart" size={22} color={color} />
@@ -90,7 +92,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="settings"
         options={{
-          title: 'Settings',
+          title: t.settings,
           tabBarIcon: ({ color, focused }) => (
             <View style={focused ? { backgroundColor: theme.primary + '14', borderRadius: 12, padding: 6 } : { padding: 6 }}>
               <MaterialIcons name="settings" size={22} color={color} />

@@ -1,30 +1,60 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { APP_CONFIG, i18n } from '../constants/config';
+import { APP_CONFIG, i18n, URDU_NUMERALS, URDU_MONTHS } from '../constants/config';
 import { Customer, Transaction, ItemRate, AppSettings, PaymentMethodConfig, ScanHistoryItem, mockCustomers, mockTransactions, mockItemRates, mockSettings, defaultPaymentMethods } from '../services/mockData';
+
+export type Language = 'en' | 'ur';
+export type ThemeColorKey = 'green' | 'gold' | 'blue' | 'black' | 'desert';
+export type FontSize = 'small' | 'medium' | 'large';
+
+export interface CustomLanguage {
+  id: string;
+  name: string;
+  nativeName: string;
+  direction: 'ltr' | 'rtl';
+  translations: Record<string, string>;
+}
 
 interface AppContextType {
   customers: Customer[];
   transactions: Transaction[];
   itemRates: ItemRate[];
   settings: AppSettings;
-  language: 'en' | 'ur';
+  language: Language;
   t: typeof i18n.en;
+  isRTL: boolean;
   paymentMethods: PaymentMethodConfig[];
   scanHistory: ScanHistoryItem[];
+
+  // New: appearance
+  themeColor: ThemeColorKey;
+  darkMode: boolean;
+  fontSize: FontSize;
+  urduNumbers: boolean;
+  customLanguages: CustomLanguage[];
+
   addCustomer: (customer: Omit<Customer, 'id' | 'balance' | 'totalCredit' | 'totalDebit' | 'createdAt'>) => void;
   deleteCustomer: (id: string) => void;
   addTransaction: (transaction: Omit<Transaction, 'id' | 'createdAt'>) => void;
   deleteTransaction: (id: string) => void;
   updateSettings: (settings: Partial<AppSettings>) => void;
-  setLanguage: (lang: 'en' | 'ur') => void;
+  setLanguage: (lang: Language) => void;
   getCustomerById: (id: string) => Customer | undefined;
   getCustomerTransactions: (customerId: string) => Transaction[];
   getTodayStats: () => { todayCredit: number; todayCollection: number; outstanding: number; totalCustomers: number };
   formatCurrency: (amount: number) => string;
+  formatNumber: (n: number) => string;
+  formatDate: (date: Date | string) => string;
   addScanHistory: (item: Omit<ScanHistoryItem, 'id' | 'scannedAt'>) => void;
   updatePaymentMethod: (id: string, updates: Partial<PaymentMethodConfig>) => void;
   togglePaymentMethod: (id: string) => void;
+
+  setThemeColor: (k: ThemeColorKey) => void;
+  setDarkMode: (v: boolean) => void;
+  setFontSize: (s: FontSize) => void;
+  setUrduNumbers: (v: boolean) => void;
+  addCustomLanguage: (lang: CustomLanguage) => void;
+  removeCustomLanguage: (id: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -34,35 +64,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [transactions, setTransactions] = useState<Transaction[]>(mockTransactions);
   const [itemRates, setItemRates] = useState<ItemRate[]>(mockItemRates);
   const [settings, setSettings] = useState<AppSettings>(mockSettings);
-  const [language, setLanguageState] = useState<'en' | 'ur'>('en');
+  const [language, setLanguageState] = useState<Language>('en');
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodConfig[]>(defaultPaymentMethods);
   const [scanHistory, setScanHistory] = useState<ScanHistoryItem[]>([]);
 
+  const [themeColor, setThemeColorState] = useState<ThemeColorKey>('green');
+  const [darkMode, setDarkModeState] = useState<boolean>(false);
+  const [fontSize, setFontSizeState] = useState<FontSize>('medium');
+  const [urduNumbers, setUrduNumbersState] = useState<boolean>(false);
+  const [customLanguages, setCustomLanguages] = useState<CustomLanguage[]>([]);
+
   const t = i18n[language];
+  const isRTL = language === 'ur';
 
   useEffect(() => {
     loadData();
   }, []);
 
-  useEffect(() => {
-    AsyncStorage.setItem(APP_CONFIG.storageKeys.customers, JSON.stringify(customers));
-  }, [customers]);
-
-  useEffect(() => {
-    AsyncStorage.setItem(APP_CONFIG.storageKeys.transactions, JSON.stringify(transactions));
-  }, [transactions]);
-
-  useEffect(() => {
-    AsyncStorage.setItem(APP_CONFIG.storageKeys.settings, JSON.stringify(settings));
-  }, [settings]);
-
-  useEffect(() => {
-    AsyncStorage.setItem('kj_paymentMethods', JSON.stringify(paymentMethods));
-  }, [paymentMethods]);
-
-  useEffect(() => {
-    AsyncStorage.setItem('kj_scanHistory', JSON.stringify(scanHistory));
-  }, [scanHistory]);
+  useEffect(() => { AsyncStorage.setItem(APP_CONFIG.storageKeys.customers, JSON.stringify(customers)); }, [customers]);
+  useEffect(() => { AsyncStorage.setItem(APP_CONFIG.storageKeys.transactions, JSON.stringify(transactions)); }, [transactions]);
+  useEffect(() => { AsyncStorage.setItem(APP_CONFIG.storageKeys.settings, JSON.stringify(settings)); }, [settings]);
+  useEffect(() => { AsyncStorage.setItem('kj_paymentMethods', JSON.stringify(paymentMethods)); }, [paymentMethods]);
+  useEffect(() => { AsyncStorage.setItem('kj_scanHistory', JSON.stringify(scanHistory)); }, [scanHistory]);
+  useEffect(() => { AsyncStorage.setItem(APP_CONFIG.storageKeys.themeColor, themeColor); }, [themeColor]);
+  useEffect(() => { AsyncStorage.setItem(APP_CONFIG.storageKeys.darkMode, JSON.stringify(darkMode)); }, [darkMode]);
+  useEffect(() => { AsyncStorage.setItem(APP_CONFIG.storageKeys.fontSize, fontSize); }, [fontSize]);
+  useEffect(() => { AsyncStorage.setItem(APP_CONFIG.storageKeys.urduNumbers, JSON.stringify(urduNumbers)); }, [urduNumbers]);
+  useEffect(() => { AsyncStorage.setItem(APP_CONFIG.storageKeys.customLanguages, JSON.stringify(customLanguages)); }, [customLanguages]);
 
   const loadData = async () => {
     try {
@@ -70,16 +98,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const storedTransactions = await AsyncStorage.getItem(APP_CONFIG.storageKeys.transactions);
       const storedSettings = await AsyncStorage.getItem(APP_CONFIG.storageKeys.settings);
       const storedLang = await AsyncStorage.getItem(APP_CONFIG.storageKeys.language);
-
       const storedPaymentMethods = await AsyncStorage.getItem('kj_paymentMethods');
       const storedScanHistory = await AsyncStorage.getItem('kj_scanHistory');
+      const storedThemeColor = await AsyncStorage.getItem(APP_CONFIG.storageKeys.themeColor);
+      const storedDarkMode = await AsyncStorage.getItem(APP_CONFIG.storageKeys.darkMode);
+      const storedFontSize = await AsyncStorage.getItem(APP_CONFIG.storageKeys.fontSize);
+      const storedUrduNumbers = await AsyncStorage.getItem(APP_CONFIG.storageKeys.urduNumbers);
+      const storedCustomLanguages = await AsyncStorage.getItem(APP_CONFIG.storageKeys.customLanguages);
 
       if (storedCustomers) setCustomers(JSON.parse(storedCustomers));
       if (storedTransactions) setTransactions(JSON.parse(storedTransactions));
       if (storedSettings) setSettings(JSON.parse(storedSettings));
-      if (storedLang) setLanguageState(storedLang as 'en' | 'ur');
+      if (storedLang === 'en' || storedLang === 'ur') setLanguageState(storedLang);
       if (storedPaymentMethods) setPaymentMethods(JSON.parse(storedPaymentMethods));
       if (storedScanHistory) setScanHistory(JSON.parse(storedScanHistory));
+      if (storedThemeColor) setThemeColorState(storedThemeColor as ThemeColorKey);
+      if (storedDarkMode) setDarkModeState(JSON.parse(storedDarkMode));
+      if (storedFontSize) setFontSizeState(storedFontSize as FontSize);
+      if (storedUrduNumbers) setUrduNumbersState(JSON.parse(storedUrduNumbers));
+      if (storedCustomLanguages) setCustomLanguages(JSON.parse(storedCustomLanguages));
     } catch (error) {
       console.log('Using mock data');
     }
@@ -149,7 +186,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSettings(prev => ({ ...prev, ...newSettings }));
   };
 
-  const setLanguage = (lang: 'en' | 'ur') => {
+  const setLanguage = (lang: Language) => {
     setLanguageState(lang);
     AsyncStorage.setItem(APP_CONFIG.storageKeys.language, lang);
   };
@@ -157,7 +194,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const getCustomerById = (id: string) => customers.find(c => c.id === id);
 
   const getCustomerTransactions = (customerId: string) =>
-    transactions.filter(t => t.customerId === customerId).sort((a, b) => 
+    transactions.filter(t => t.customerId === customerId).sort((a, b) =>
       new Date(b.date).getTime() - new Date(a.date).getTime()
     );
 
@@ -170,8 +207,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return { todayCredit, todayCollection, outstanding, totalCustomers: customers.length };
   };
 
+  const toUrduNumber = (s: string) => s.split('').map(ch => URDU_NUMERALS[ch] || ch).join('');
+
+  const formatNumber = (n: number) => {
+    const formatted = n.toLocaleString('en-PK');
+    if (urduNumbers && language === 'ur') return toUrduNumber(formatted);
+    return formatted;
+  };
+
   const formatCurrency = (amount: number) => {
-    return `Rs. ${amount.toLocaleString('en-PK')}`;
+    const num = formatNumber(amount);
+    if (language === 'ur') return `${num} روپے`;
+    return `Rs. ${num}`;
+  };
+
+  const formatDate = (date: Date | string) => {
+    const d = typeof date === 'string' ? new Date(date) : date;
+    if (language === 'ur') {
+      const day = String(d.getDate());
+      const month = URDU_MONTHS[d.getMonth()];
+      const year = String(d.getFullYear());
+      const dayDisplay = urduNumbers ? toUrduNumber(day) : day;
+      const yearDisplay = urduNumbers ? toUrduNumber(year) : year;
+      return `${dayDisplay} ${month} ${yearDisplay}`;
+    }
+    return d.toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
   const addScanHistory = (item: Omit<ScanHistoryItem, 'id' | 'scannedAt'>) => {
@@ -191,17 +251,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPaymentMethods(prev => prev.map(pm => pm.id === id ? { ...pm, enabled: !pm.enabled } : pm));
   };
 
-  return (
-    <AppContext.Provider value={{
-      customers, transactions, itemRates, settings, language, t,
-      paymentMethods, scanHistory,
-      addCustomer, deleteCustomer, addTransaction, deleteTransaction,
-      updateSettings, setLanguage, getCustomerById, getCustomerTransactions,
-      getTodayStats, formatCurrency, addScanHistory, updatePaymentMethod, togglePaymentMethod,
-    }}>
-      {children}
-    </AppContext.Provider>
-  );
+  const setThemeColor = (k: ThemeColorKey) => setThemeColorState(k);
+  const setDarkMode = (v: boolean) => setDarkModeState(v);
+  const setFontSize = (s: FontSize) => setFontSizeState(s);
+  const setUrduNumbers = (v: boolean) => setUrduNumbersState(v);
+  const addCustomLanguage = (lang: CustomLanguage) => setCustomLanguages(prev => [...prev, lang]);
+  const removeCustomLanguage = (id: string) => setCustomLanguages(prev => prev.filter(l => l.id !== id));
+
+  const value = useMemo(() => ({
+    customers, transactions, itemRates, settings, language, t, isRTL,
+    paymentMethods, scanHistory,
+    themeColor, darkMode, fontSize, urduNumbers, customLanguages,
+    addCustomer, deleteCustomer, addTransaction, deleteTransaction,
+    updateSettings, setLanguage, getCustomerById, getCustomerTransactions,
+    getTodayStats, formatCurrency, formatNumber, formatDate,
+    addScanHistory, updatePaymentMethod, togglePaymentMethod,
+    setThemeColor, setDarkMode, setFontSize, setUrduNumbers,
+    addCustomLanguage, removeCustomLanguage,
+  }), [customers, transactions, itemRates, settings, language, paymentMethods, scanHistory, themeColor, darkMode, fontSize, urduNumbers, customLanguages]);
+
+  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
 
 export function useApp() {

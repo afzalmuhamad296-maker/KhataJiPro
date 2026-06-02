@@ -44,6 +44,7 @@ export interface AppSettings {
   shopName: string;
   ownerName: string;
   phone: string;
+  address?: string;
   language: 'en' | 'ur';
   pin: string;
   darkMode: boolean;
@@ -162,6 +163,7 @@ export const mockSettings: AppSettings = {
   shopName: 'Malik General Store',
   ownerName: 'Muhammad Malik',
   phone: '03001112233',
+  address: 'Anarkali Bazaar, Lahore',
   language: 'en',
   pin: '',
   darkMode: false,

@@ -1,339 +1,1163 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, Animated, Alert, Platform } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, Animated, Platform, TextInput, Easing } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../constants/theme';
 import { useApp } from '../contexts/AppContext';
+import { useAlert } from '@/template';
 import * as Haptics from 'expo-haptics';
 
-const COMMANDS = [
-  { text: 'Ahmed ko 5000 udhaar do', icon: 'arrow-upward', color: theme.credit },
-  { text: 'Bilal se 3000 wapas lo', icon: 'arrow-downward', color: theme.payment },
-  { text: 'Aaj ka hisaab dikhao', icon: 'assessment', color: theme.primary },
-  { text: 'Naya customer Rashid add karo', icon: 'person-add', color: '#1565C0' },
-  { text: 'Ahmed ka balance batao', icon: 'account-balance', color: theme.warningDark },
-  { text: 'Sab ka total outstanding kitna hai', icon: 'summarize', color: '#6A1B9A' },
-];
+type VoiceState = 'idle' | 'listening' | 'processing' | 'speaking' | 'error';
+
+interface ParsedCommand {
+  type: 'credit' | 'debit' | 'query_balance' | 'query_summary' | 'query_rate' | 'add_customer' | 'reminder';
+  name?: string;
+  amount?: number;
+  customer?: any;
+  item?: string;
+  action: string;
+  actionUr: string;
+  raw: string;
+}
+
+interface VoiceHistoryItem {
+  id: string;
+  text: string;
+  status: 'success' | 'failed';
+  time: string;
+  result?: string;
+}
 
 export default function VoiceEntryScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { customers, addTransaction, formatCurrency, getTodayStats } = useApp();
-  const [isListening, setIsListening] = useState(false);
-  const [transcript, setTranscript] = useState('');
-  const [parsedResult, setParsedResult] = useState<any>(null);
-  const [showConfirmation, setShowConfirmation] = useState(false);
-  const [language, setLanguage] = useState<'en' | 'ur'>('en');
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const waveAnim = useRef(new Animated.Value(0)).current;
+  const { customers, addTransaction, formatCurrency, getTodayStats, t, language, isRTL, itemRates } = useApp();
+  const { showAlert } = useAlert();
 
+  const [voiceState, setVoiceState] = useState<VoiceState>('idle');
+  const [transcript, setTranscript] = useState('');
+  const [textInput, setTextInput] = useState('');
+  const [parsed, setParsed] = useState<ParsedCommand | null>(null);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [history, setHistory] = useState<VoiceHistoryItem[]>([]);
+  const [showTextMode, setShowTextMode] = useState(false);
+
+  // Animations
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const ringAnim = useRef(new Animated.Value(0)).current;
+  const wave1 = useRef(new Animated.Value(0.4)).current;
+  const wave2 = useRef(new Animated.Value(0.6)).current;
+  const wave3 = useRef(new Animated.Value(0.8)).current;
+  const wave4 = useRef(new Animated.Value(0.5)).current;
+  const wave5 = useRef(new Animated.Value(0.7)).current;
+  const spinAnim = useRef(new Animated.Value(0)).current;
+
+  const stateColors = {
+    idle: { bg: theme.primary, ring: 'rgba(13,124,74,0.25)', label: theme.primary },
+    listening: { bg: '#2563EB', ring: 'rgba(37,99,235,0.3)', label: '#2563EB' },
+    processing: { bg: '#F59E0B', ring: 'rgba(245,158,11,0.3)', label: '#D97706' },
+    speaking: { bg: theme.payment, ring: 'rgba(22,163,74,0.3)', label: theme.payment },
+    error: { bg: theme.credit, ring: 'rgba(220,38,38,0.3)', label: theme.credit },
+  };
+
+  // Animation logic by state
   useEffect(() => {
-    if (isListening) {
+    pulseAnim.stopAnimation();
+    ringAnim.stopAnimation();
+    spinAnim.stopAnimation();
+
+    if (voiceState === 'listening') {
+      // Pulse + ring
       Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.3, duration: 600, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1.12, duration: 700, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 700, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
         ])
       ).start();
       Animated.loop(
-        Animated.sequence([
-          Animated.timing(waveAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
-          Animated.timing(waveAnim, { toValue: 0, duration: 400, useNativeDriver: true }),
-        ])
+        Animated.timing(ringAnim, { toValue: 1, duration: 1500, useNativeDriver: true, easing: Easing.out(Easing.ease) })
+      ).start();
+      animateWaves();
+    } else if (voiceState === 'speaking') {
+      animateWaves();
+    } else if (voiceState === 'processing') {
+      Animated.loop(
+        Animated.timing(spinAnim, { toValue: 1, duration: 1000, useNativeDriver: true, easing: Easing.linear })
       ).start();
     } else {
       pulseAnim.setValue(1);
-      waveAnim.setValue(0);
+      ringAnim.setValue(0);
+      spinAnim.setValue(0);
     }
-  }, [isListening]);
+  }, [voiceState]);
 
-  const parseCommand = useCallback((text: string) => {
-    const lowerText = text.toLowerCase();
-    // Parse credit command: "[Name] ko [amount] udhaar do"
-    const creditMatch = lowerText.match(/(.+?)\s+ko\s+(\d+)\s+udhaar/);
-    if (creditMatch) {
-      const name = creditMatch[1].trim();
-      const amount = parseInt(creditMatch[2]);
-      const customer = customers.find(c => c.name.toLowerCase().includes(name));
-      return { type: 'credit', name, amount, customer, action: 'Udhaar dena' };
+  const animateWaves = () => {
+    [wave1, wave2, wave3, wave4, wave5].forEach((wave, i) => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(wave, { toValue: 0.3 + Math.random() * 0.7, duration: 300 + i * 50, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+          Animated.timing(wave, { toValue: 0.4 + Math.random() * 0.6, duration: 300 + i * 50, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+        ])
+      ).start();
+    });
+  };
+
+  // Suggested commands (Urdu + English)
+  const suggestedCommands = language === 'ur' ? [
+    { text: 'اسد کو 500 ادھار دو', icon: 'north-east', color: theme.credit },
+    { text: 'راشد سے 1000 واپس لو', icon: 'south-west', color: theme.payment },
+    { text: 'آج کا حساب دکھاؤ', icon: 'assessment', color: theme.primary },
+    { text: 'چینی کا ریٹ کیا ہے', icon: 'sell', color: '#D97706' },
+    { text: 'نیا گاہک بناؤ', icon: 'person-add', color: '#2563EB' },
+    { text: 'عمران کو یاد دہانی بھیجیں', icon: 'notifications-active', color: '#7C3AED' },
+  ] : [
+    { text: 'Asad ko 500 udhaar do', icon: 'north-east', color: theme.credit },
+    { text: 'Rashid se 1000 wapas lo', icon: 'south-west', color: theme.payment },
+    { text: 'Aaj ka hisaab dikhao', icon: 'assessment', color: theme.primary },
+    { text: 'Cheeni ka rate kya hai', icon: 'sell', color: '#D97706' },
+    { text: 'Naya customer banao', icon: 'person-add', color: '#2563EB' },
+    { text: 'Imran ko reminder bhejen', icon: 'notifications-active', color: '#7C3AED' },
+  ];
+
+  // Parse command - supports both Urdu script and roman urdu / English
+  const parseCommand = useCallback((rawText: string): ParsedCommand | null => {
+    const text = rawText.toLowerCase().trim();
+    const original = rawText.trim();
+
+    // Helper to find customer by name (fuzzy)
+    const findCustomer = (name: string) => {
+      const n = name.toLowerCase().trim();
+      return customers.find(c =>
+        c.name.toLowerCase().includes(n) || n.includes(c.name.toLowerCase().split(' ')[0])
+      );
+    };
+
+    // Extract amount from text (handles English digits, Urdu digits)
+    const extractAmount = (s: string): number | null => {
+      // Convert Urdu digits to English
+      const urduToEng: Record<string, string> = { '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4', '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9' };
+      const normalized = s.replace(/[۰-۹]/g, d => urduToEng[d] || d);
+      const match = normalized.match(/(\d+)/);
+      return match ? parseInt(match[1]) : null;
+    };
+
+    // ===== CREDIT patterns (give credit) =====
+    // Roman: "X ko Y udhaar do" / "X ko Y rupees udhaar"
+    // Urdu: "X کو Y ادھار دو"
+    const creditPatterns = [
+      /^(.+?)\s+(?:ko|کو)\s+([\d۰-۹]+).*?(?:udhaar|ادھار|credit)/i,
+      /(?:credit|udhaar|ادھار).*?(.+?)\s+(?:to|کو|ko)\s*([\d۰-۹]+)/i,
+      /^(.+?)\s+([\d۰-۹]+)\s+(?:udhaar|ادھار|credit)/i,
+    ];
+    for (const p of creditPatterns) {
+      const m = original.match(p);
+      if (m) {
+        const name = m[1].trim();
+        const amount = extractAmount(m[2]);
+        if (amount && amount > 0) {
+          return {
+            type: 'credit',
+            name,
+            amount,
+            customer: findCustomer(name),
+            action: `Give Rs. ${amount} credit to ${name}`,
+            actionUr: `${name} کو ${amount} روپے ادھار دیں`,
+            raw: original,
+          };
+        }
+      }
     }
-    // Parse payment: "[Name] se [amount] wapas lo"
-    const debitMatch = lowerText.match(/(.+?)\s+se\s+(\d+)\s+wapas/);
-    if (debitMatch) {
-      const name = debitMatch[1].trim();
-      const amount = parseInt(debitMatch[2]);
-      const customer = customers.find(c => c.name.toLowerCase().includes(name));
-      return { type: 'debit', name, amount, customer, action: 'Payment lena' };
+
+    // ===== DEBIT patterns (receive payment) =====
+    const debitPatterns = [
+      /^(.+?)\s+(?:se|سے)\s+([\d۰-۹]+).*?(?:wapas|واپس|payment|ادائیگی)/i,
+      /(?:payment|wapas|واپس).*?(.+?)\s+(?:se|سے)\s*([\d۰-۹]+)/i,
+      /^(.+?)\s+([\d۰-۹]+)\s+(?:wapas|واپس|paid|paid)/i,
+      /received\s+([\d۰-۹]+)\s+from\s+(.+)/i,
+    ];
+    for (const p of debitPatterns) {
+      const m = original.match(p);
+      if (m) {
+        let name = m[1].trim();
+        let amountStr = m[2];
+        if (p.source.includes('received')) {
+          name = m[2].trim();
+          amountStr = m[1];
+        }
+        const amount = extractAmount(amountStr);
+        if (amount && amount > 0) {
+          return {
+            type: 'debit',
+            name,
+            amount,
+            customer: findCustomer(name),
+            action: `Received Rs. ${amount} from ${name}`,
+            actionUr: `${name} سے ${amount} روپے وصول`,
+            raw: original,
+          };
+        }
+      }
     }
-    // Parse balance check
-    const balanceMatch = lowerText.match(/(.+?)\s+ka\s+balance/);
-    if (balanceMatch) {
-      const name = balanceMatch[1].trim();
-      const customer = customers.find(c => c.name.toLowerCase().includes(name));
-      return { type: 'balance', name, customer, action: 'Balance check' };
+
+    // ===== Balance Query =====
+    if (/(?:balance|بقایا|hisaab|حساب).*?(.+)|(.+)\s+(?:ka|کا)\s+(?:balance|بقایا|hisaab|حساب)/i.test(original)) {
+      const m = original.match(/(.+?)\s+(?:ka|کا)\s+(?:balance|بقایا|hisaab|حساب)/i);
+      const name = m ? m[1].trim() : '';
+      return {
+        type: 'query_balance',
+        name,
+        customer: findCustomer(name),
+        action: `Check balance of ${name}`,
+        actionUr: `${name} کا بقایا چیک کریں`,
+        raw: original,
+      };
     }
-    // Parse summary
-    if (lowerText.includes('hisaab') || lowerText.includes('summary') || lowerText.includes('total')) {
-      return { type: 'summary', action: 'Summary dikhana' };
+
+    // ===== Today's Summary =====
+    if (/(?:aaj|آج|today).*?(?:hisaab|حساب|summary|سار)/i.test(text) || /summary|sara hisaab/i.test(text)) {
+      return {
+        type: 'query_summary',
+        action: "Show today's summary",
+        actionUr: 'آج کا حساب دکھائیں',
+        raw: original,
+      };
     }
+
+    // ===== Rate Query =====
+    const rateMatch = original.match(/(.+?)\s+(?:ka|کا)\s+(?:rate|ریٹ|price|قیمت)/i);
+    if (rateMatch) {
+      const item = rateMatch[1].trim();
+      return {
+        type: 'query_rate',
+        item,
+        action: `Check rate of ${item}`,
+        actionUr: `${item} کا ریٹ`,
+        raw: original,
+      };
+    }
+
+    // ===== New Customer =====
+    if (/(?:naya|نیا|new)\s+(?:customer|گاہک)/i.test(text)) {
+      return {
+        type: 'add_customer',
+        action: 'Add new customer',
+        actionUr: 'نیا گاہک شامل کریں',
+        raw: original,
+      };
+    }
+
+    // ===== Reminder =====
+    const remMatch = original.match(/(.+?)\s+(?:ko|کو)\s+(?:reminder|یاد دہانی)/i);
+    if (remMatch) {
+      const name = remMatch[1].trim();
+      return {
+        type: 'reminder',
+        name,
+        customer: findCustomer(name),
+        action: `Send reminder to ${name}`,
+        actionUr: `${name} کو یاد دہانی`,
+        raw: original,
+      };
+    }
+
     return null;
   }, [customers]);
 
+  // Mic press handler - simulates speech recognition
   const handleMicPress = () => {
-    if (isListening) {
-      setIsListening(false);
-      // Simulate processing
-      setTimeout(() => {
-        if (transcript) {
-          const result = parseCommand(transcript);
-          if (result) {
-            setParsedResult(result);
-            setShowConfirmation(true);
-          } else {
-            Alert.alert('Not Understood', 'Could not understand the command. Please try again.');
-          }
-        }
-      }, 500);
-    } else {
-      setIsListening(true);
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    }
+
+    if (voiceState === 'idle' || voiceState === 'error') {
+      setVoiceState('listening');
       setTranscript('');
-      setParsedResult(null);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setParsed(null);
+
+      // Simulate listening for ~3 seconds, then if no command provided via chip, go to error
+      setTimeout(() => {
+        setVoiceState(prev => {
+          if (prev === 'listening' && !transcript) {
+            return 'idle';
+          }
+          return prev;
+        });
+      }, 8000);
+    } else if (voiceState === 'listening') {
+      setVoiceState('idle');
     }
   };
 
-  const handleCommandPress = (command: string) => {
+  const processCommand = (command: string) => {
     setTranscript(command);
-    const result = parseCommand(command);
-    if (result) {
-      setParsedResult(result);
-      setShowConfirmation(true);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setVoiceState('processing');
+
+    setTimeout(() => {
+      const result = parseCommand(command);
+      if (result) {
+        setParsed(result);
+        setShowConfirm(true);
+        setVoiceState('speaking');
+        setTimeout(() => setVoiceState('idle'), 1500);
+      } else {
+        setVoiceState('error');
+        addToHistory(command, 'failed', language === 'ur' ? 'سمجھ نہیں آیا' : 'Not understood');
+        setTimeout(() => setVoiceState('idle'), 2000);
+      }
+    }, 1200);
+  };
+
+  const handleChipPress = (cmd: string) => {
+    if (Platform.OS !== 'web') {
+      Haptics.selectionAsync().catch(() => {});
     }
+    processCommand(cmd);
+  };
+
+  const handleTextSubmit = () => {
+    if (!textInput.trim()) return;
+    processCommand(textInput.trim());
+    setTextInput('');
+  };
+
+  const addToHistory = (text: string, status: 'success' | 'failed', result?: string) => {
+    const item: VoiceHistoryItem = {
+      id: Date.now().toString(),
+      text,
+      status,
+      time: new Date().toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' }),
+      result,
+    };
+    setHistory(prev => [item, ...prev].slice(0, 10));
   };
 
   const handleConfirm = () => {
-    if (!parsedResult) return;
+    if (!parsed) return;
 
-    if (parsedResult.type === 'credit' && parsedResult.customer) {
+    let resultText = '';
+
+    if (parsed.type === 'credit' && parsed.customer && parsed.amount) {
       addTransaction({
-        customerId: parsedResult.customer.id,
-        customerName: parsedResult.customer.name,
+        customerId: parsed.customer.id,
+        customerName: parsed.customer.name,
         type: 'credit',
-        amount: parsedResult.amount,
-        note: `Voice: ${transcript}`,
+        amount: parsed.amount,
+        note: `Voice: ${parsed.raw}`,
         date: new Date().toISOString().split('T')[0],
       });
-      Alert.alert('Done', `Rs. ${parsedResult.amount} credit added for ${parsedResult.customer.name}`);
-    } else if (parsedResult.type === 'debit' && parsedResult.customer) {
+      resultText = language === 'ur'
+        ? `${formatCurrency(parsed.amount)} ادھار محفوظ ہو گیا`
+        : `${formatCurrency(parsed.amount)} credit added`;
+      addToHistory(parsed.raw, 'success', resultText);
+      showAlert(language === 'ur' ? 'کامیاب' : 'Success', resultText);
+    } else if (parsed.type === 'debit' && parsed.customer && parsed.amount) {
       addTransaction({
-        customerId: parsedResult.customer.id,
-        customerName: parsedResult.customer.name,
+        customerId: parsed.customer.id,
+        customerName: parsed.customer.name,
         type: 'debit',
-        amount: parsedResult.amount,
-        note: `Voice: ${transcript}`,
+        amount: parsed.amount,
+        note: `Voice: ${parsed.raw}`,
         paymentMethod: 'cash',
         date: new Date().toISOString().split('T')[0],
       });
-      Alert.alert('Done', `Rs. ${parsedResult.amount} payment received from ${parsedResult.customer.name}`);
-    } else if (parsedResult.type === 'balance' && parsedResult.customer) {
-      Alert.alert('Balance', `${parsedResult.customer.name}: ${formatCurrency(parsedResult.customer.balance)}`);
-    } else if (parsedResult.type === 'summary') {
+      resultText = language === 'ur'
+        ? `${formatCurrency(parsed.amount)} ادائیگی موصول`
+        : `${formatCurrency(parsed.amount)} payment received`;
+      addToHistory(parsed.raw, 'success', resultText);
+      showAlert(language === 'ur' ? 'کامیاب' : 'Success', resultText);
+    } else if (parsed.type === 'query_balance' && parsed.customer) {
+      resultText = `${parsed.customer.name}: ${formatCurrency(parsed.customer.balance)}`;
+      addToHistory(parsed.raw, 'success', resultText);
+      showAlert(language === 'ur' ? 'بقایا' : 'Balance', resultText);
+    } else if (parsed.type === 'query_summary') {
       const stats = getTodayStats();
-      Alert.alert('Today Summary', `Credit: ${formatCurrency(stats.todayCredit)}\nCollection: ${formatCurrency(stats.todayCollection)}\nOutstanding: ${formatCurrency(stats.outstanding)}`);
+      resultText = language === 'ur'
+        ? `ادھار: ${formatCurrency(stats.todayCredit)}\nوصولی: ${formatCurrency(stats.todayCollection)}\nبقایا: ${formatCurrency(stats.outstanding)}`
+        : `Credit: ${formatCurrency(stats.todayCredit)}\nCollection: ${formatCurrency(stats.todayCollection)}\nOutstanding: ${formatCurrency(stats.outstanding)}`;
+      addToHistory(parsed.raw, 'success', language === 'ur' ? 'حساب دکھایا گیا' : 'Summary shown');
+      showAlert(language === 'ur' ? 'آج کا حساب' : "Today's Summary", resultText);
+    } else if (parsed.type === 'query_rate' && parsed.item) {
+      const rate = itemRates.find(r => r.name.toLowerCase().includes(parsed.item!.toLowerCase()));
+      resultText = rate
+        ? `${rate.name}: ${formatCurrency(rate.rate)} / ${rate.unit}`
+        : language === 'ur' ? 'ریٹ نہیں ملا' : 'Rate not found';
+      addToHistory(parsed.raw, rate ? 'success' : 'failed', resultText);
+      showAlert(language === 'ur' ? 'ریٹ' : 'Rate', resultText);
+    } else if (parsed.type === 'add_customer') {
+      addToHistory(parsed.raw, 'success', language === 'ur' ? 'نیا گاہک' : 'Add customer');
+      router.push('/add-customer');
+    } else if (parsed.type === 'reminder' && parsed.customer) {
+      resultText = language === 'ur'
+        ? `${parsed.customer.name} کو یاد دہانی بھیج دی گئی`
+        : `Reminder sent to ${parsed.customer.name}`;
+      addToHistory(parsed.raw, 'success', resultText);
+      showAlert(language === 'ur' ? 'بھیج دی' : 'Sent', resultText);
+    } else {
+      resultText = language === 'ur' ? 'گاہک نہیں ملا' : 'Customer not found';
+      addToHistory(parsed.raw, 'failed', resultText);
+      showAlert(language === 'ur' ? 'خرابی' : 'Error', resultText);
     }
-    setShowConfirmation(false);
+
+    setShowConfirm(false);
+    setParsed(null);
     setTranscript('');
-    setParsedResult(null);
+    setVoiceState('idle');
   };
+
+  const handleCancel = () => {
+    setShowConfirm(false);
+    setParsed(null);
+    setTranscript('');
+    setVoiceState('idle');
+  };
+
+  const colors = stateColors[voiceState];
+  const stateLabel = {
+    idle: language === 'ur' ? t.voiceIdle : t.voiceIdle,
+    listening: t.voiceListen,
+    processing: t.voiceProcess,
+    speaking: t.voiceSpeak,
+    error: t.voiceError,
+  }[voiceState];
+
+  const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  const ringScale = ringAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.6] });
+  const ringOpacity = ringAnim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] });
 
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <MaterialIcons name="arrow-back" size={24} color={theme.textDark} />
+      {/* Header */}
+      <View style={[styles.header, isRTL && styles.rtlRow]}>
+        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={8}>
+          <MaterialIcons name={isRTL ? 'arrow-forward' : 'arrow-back'} size={24} color={theme.textDark} />
         </Pressable>
-        <Text style={styles.headerTitle}>Voice Entry</Text>
+        <View style={styles.headerCenter}>
+          <Text style={[styles.headerTitle, isRTL && styles.rtlText]}>{t.voiceEntry}</Text>
+          <Text style={[styles.headerSubtitle, isRTL && styles.rtlText]}>
+            {language === 'ur' ? 'اے آئی پاور بولیں' : 'AI-Powered Voice'}
+          </Text>
+        </View>
         <Pressable
-          style={styles.langBtn}
-          onPress={() => setLanguage(language === 'en' ? 'ur' : 'en')}
+          style={({ pressed }) => [styles.modeBtn, pressed && { opacity: 0.7 }]}
+          onPress={() => setShowTextMode(!showTextMode)}
         >
-          <Text style={styles.langBtnText}>{language === 'en' ? 'اردو' : 'EN'}</Text>
+          <MaterialIcons name={showTextMode ? 'mic' : 'keyboard'} size={20} color={theme.primary} />
         </Pressable>
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + 24 }} showsVerticalScrollIndicator={false}>
-        {/* Status Area */}
-        <View style={styles.statusArea}>
-          {isListening ? (
-            <View style={styles.listeningBox}>
-              <View style={styles.waveContainer}>
-                {[...Array(5)].map((_, i) => (
-                  <Animated.View
-                    key={i}
-                    style={[styles.wavebar, {
-                      transform: [{ scaleY: waveAnim.interpolate({ inputRange: [0, 1], outputRange: [0.4, 0.4 + Math.random() * 0.8] }) }],
-                      backgroundColor: theme.primary,
-                      opacity: 0.6 + i * 0.08,
-                    }]}
-                  />
-                ))}
-              </View>
-              <Text style={styles.listeningText}>Listening...</Text>
-              <Text style={styles.langHint}>{language === 'en' ? 'Speak in English or Urdu' : 'اردو یا انگریزی میں بولیں'}</Text>
-            </View>
-          ) : transcript ? (
-            <View style={styles.transcriptBox}>
-              <MaterialIcons name="format-quote" size={20} color={theme.textMuted} />
-              <Text style={styles.transcriptText}>{transcript}</Text>
-            </View>
-          ) : (
-            <View style={styles.idleBox}>
-              <MaterialIcons name="mic" size={40} color={theme.textMuted} />
-              <Text style={styles.idleText}>Tap mic to start speaking</Text>
-              <Text style={styles.idleHint}>Or tap a command below</Text>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Voice Visualizer Area */}
+        <View style={styles.visualizerArea}>
+          {/* Rings */}
+          <View style={styles.ringContainer}>
+            <Animated.View
+              style={[
+                styles.outerRing,
+                {
+                  backgroundColor: colors.ring,
+                  transform: [{ scale: ringScale }],
+                  opacity: voiceState === 'listening' ? ringOpacity : voiceState === 'idle' ? 0.4 : 0.6,
+                },
+              ]}
+            />
+            <Animated.View
+              style={[
+                styles.middleRing,
+                {
+                  backgroundColor: colors.ring,
+                  transform: [{ scale: pulseAnim }],
+                },
+              ]}
+            />
+
+            {/* Central Mic Button */}
+            <Pressable onPress={handleMicPress} disabled={voiceState === 'processing'}>
+              <Animated.View
+                style={[
+                  styles.micButton,
+                  { backgroundColor: colors.bg },
+                  voiceState === 'processing' && { transform: [{ rotate: spin }] },
+                ]}
+              >
+                <MaterialIcons
+                  name={
+                    voiceState === 'idle' ? 'mic' :
+                    voiceState === 'listening' ? 'mic' :
+                    voiceState === 'processing' ? 'autorenew' :
+                    voiceState === 'speaking' ? 'volume-up' :
+                    'error-outline'
+                  }
+                  size={36}
+                  color="#FFF"
+                />
+              </Animated.View>
+            </Pressable>
+          </View>
+
+          {/* Status text */}
+          <Text style={[styles.statusText, { color: colors.label }]}>{stateLabel}</Text>
+
+          {/* Waveform */}
+          {(voiceState === 'listening' || voiceState === 'speaking') && (
+            <View style={styles.waveform}>
+              {[wave1, wave2, wave3, wave4, wave5].map((w, i) => (
+                <Animated.View
+                  key={i}
+                  style={[
+                    styles.waveBar,
+                    {
+                      backgroundColor: colors.bg,
+                      transform: [{ scaleY: w }],
+                    },
+                  ]}
+                />
+              ))}
             </View>
           )}
+
+          {/* Transcript display */}
+          {transcript ? (
+            <View style={styles.transcriptBubble}>
+              <MaterialIcons name="format-quote" size={14} color={theme.textMuted} />
+              <Text style={[styles.transcriptText, isRTL && styles.rtlText]}>{transcript}</Text>
+            </View>
+          ) : null}
         </View>
 
-        {/* Mic Button */}
-        <View style={styles.micContainer}>
-          <Animated.View style={[styles.pulseRing, { transform: [{ scale: pulseAnim }], opacity: isListening ? 0.3 : 0 }]} />
-          <Pressable
-            style={[styles.micButton, isListening && styles.micButtonActive]}
-            onPress={handleMicPress}
-          >
-            <MaterialIcons name={isListening ? 'stop' : 'mic'} size={36} color="#FFF" />
-          </Pressable>
-          <Text style={styles.micLabel}>{isListening ? 'Tap to stop' : 'Tap to speak'}</Text>
-        </View>
+        {/* Text Input Mode */}
+        {showTextMode ? (
+          <View style={styles.textInputCard}>
+            <Text style={[styles.textInputLabel, isRTL && styles.rtlText]}>
+              {language === 'ur' ? 'کمانڈ ٹائپ کریں' : 'Type your command'}
+            </Text>
+            <View style={styles.textInputWrap}>
+              <TextInput
+                style={[styles.textInput, isRTL && { textAlign: 'right', writingDirection: 'rtl' }]}
+                value={textInput}
+                onChangeText={setTextInput}
+                placeholder={language === 'ur' ? 'مثال: اسد کو 500 ادھار دو' : 'e.g., Asad ko 500 udhaar do'}
+                placeholderTextColor={theme.textMuted}
+                onSubmitEditing={handleTextSubmit}
+                returnKeyType="send"
+              />
+              <Pressable
+                style={({ pressed }) => [styles.sendBtn, pressed && { opacity: 0.8 }]}
+                onPress={handleTextSubmit}
+              >
+                <MaterialIcons name="send" size={18} color="#FFF" />
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
 
-        {/* Suggested Commands */}
+        {/* Suggested Commands - Chips */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Suggested Commands</Text>
-          {COMMANDS.map((cmd, index) => (
-            <Pressable
-              key={index}
-              style={styles.commandCard}
-              onPress={() => handleCommandPress(cmd.text)}
-            >
-              <View style={[styles.commandIcon, { backgroundColor: cmd.color + '20' }]}>
-                <MaterialIcons name={cmd.icon as any} size={20} color={cmd.color} />
-              </View>
-              <Text style={styles.commandText}>{cmd.text}</Text>
-              <MaterialIcons name="play-arrow" size={20} color={theme.textMuted} />
-            </Pressable>
-          ))}
+          <View style={[styles.sectionHeader, isRTL && styles.rtlRow]}>
+            <MaterialIcons name="auto-awesome" size={18} color={theme.primary} />
+            <Text style={[styles.sectionTitle, isRTL && styles.rtlText]}>{t.suggestedCommands}</Text>
+          </View>
+          <View style={styles.chipGrid}>
+            {suggestedCommands.map((cmd, i) => (
+              <Pressable
+                key={i}
+                style={({ pressed }) => [
+                  styles.chipCard,
+                  pressed && { transform: [{ scale: 0.97 }], opacity: 0.85 },
+                ]}
+                onPress={() => handleChipPress(cmd.text)}
+              >
+                <View style={[styles.chipIcon, { backgroundColor: cmd.color + '15' }]}>
+                  <MaterialIcons name={cmd.icon as any} size={16} color={cmd.color} />
+                </View>
+                <Text
+                  style={[styles.chipText, isRTL && styles.rtlText]}
+                  numberOfLines={2}
+                >
+                  {cmd.text}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
         </View>
+
+        {/* Voice History */}
+        {history.length > 0 ? (
+          <View style={styles.section}>
+            <View style={[styles.sectionHeader, isRTL && styles.rtlRow]}>
+              <MaterialIcons name="history" size={18} color={theme.textSecondary} />
+              <Text style={[styles.sectionTitle, isRTL && styles.rtlText]}>{t.voiceHistory}</Text>
+            </View>
+            <View style={styles.historyList}>
+              {history.map((item) => (
+                <Pressable
+                  key={item.id}
+                  style={styles.historyItem}
+                  onPress={() => item.status === 'failed' && processCommand(item.text)}
+                >
+                  <View
+                    style={[
+                      styles.historyIcon,
+                      { backgroundColor: item.status === 'success' ? theme.paymentLight : theme.creditLight },
+                    ]}
+                  >
+                    <MaterialIcons
+                      name={item.status === 'success' ? 'check' : 'close'}
+                      size={14}
+                      color={item.status === 'success' ? theme.payment : theme.credit}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.historyText, isRTL && styles.rtlText]} numberOfLines={1}>{item.text}</Text>
+                    {item.result ? (
+                      <Text style={[styles.historyResult, isRTL && styles.rtlText]} numberOfLines={1}>{item.result}</Text>
+                    ) : null}
+                  </View>
+                  <Text style={styles.historyTime}>{item.time}</Text>
+                  {item.status === 'failed' ? (
+                    <MaterialIcons name="refresh" size={16} color={theme.textMuted} />
+                  ) : null}
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ) : null}
 
         {/* Tips */}
         <View style={styles.tipsCard}>
-          <MaterialIcons name="lightbulb" size={20} color={theme.warningDark} />
-          <View style={{ flex: 1, marginLeft: 10 }}>
-            <Text style={styles.tipsTitle}>Tips</Text>
-            <Text style={styles.tipsText}>Say customer name clearly followed by amount. Works in Urdu and English.</Text>
-          </View>
+          <LinearGradient colors={['#FEF3C7', '#FDE68A']} style={styles.tipsGradient}>
+            <MaterialIcons name="lightbulb" size={20} color="#B45309" />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={[styles.tipsTitle, isRTL && styles.rtlText]}>
+                {language === 'ur' ? 'تجاویز' : 'Tips'}
+              </Text>
+              <Text style={[styles.tipsText, isRTL && styles.rtlText]}>
+                {language === 'ur'
+                  ? 'گاہک کا نام صاف بولیں پھر رقم۔ اردو، انگریزی اور رومن اردو میں کام کرتا ہے۔'
+                  : 'Speak customer name clearly followed by amount. Works in Urdu, English & Roman Urdu.'}
+              </Text>
+            </View>
+          </LinearGradient>
         </View>
       </ScrollView>
 
-      {/* Confirmation Dialog */}
-      {showConfirmation && parsedResult && (
+      {/* Confirmation Modal */}
+      {showConfirm && parsed ? (
         <View style={styles.confirmOverlay}>
           <View style={styles.confirmModal}>
-            <View style={styles.confirmHeader}>
-              <MaterialIcons name="check-circle" size={40} color={theme.primary} />
-              <Text style={styles.confirmTitle}>Confirm Action</Text>
-            </View>
+            <LinearGradient colors={[theme.primary, '#065F37']} style={styles.confirmHeader}>
+              <View style={styles.confirmIconWrap}>
+                <MaterialIcons name="record-voice-over" size={32} color="#FFF" />
+              </View>
+              <Text style={styles.confirmHeaderTitle}>
+                {language === 'ur' ? 'کیا یہ ٹھیک ہے؟' : 'Is this correct?'}
+              </Text>
+            </LinearGradient>
+
             <View style={styles.confirmBody}>
               <View style={styles.confirmRow}>
-                <Text style={styles.confirmLabel}>Action:</Text>
-                <Text style={styles.confirmValue}>{parsedResult.action}</Text>
+                <Text style={styles.confirmLabel}>{t.action}:</Text>
+                <Text style={styles.confirmValue}>{language === 'ur' ? parsed.actionUr : parsed.action}</Text>
               </View>
-              {parsedResult.customer && (
+
+              {parsed.customer ? (
                 <View style={styles.confirmRow}>
-                  <Text style={styles.confirmLabel}>Customer:</Text>
-                  <Text style={styles.confirmValue}>{parsedResult.customer.name}</Text>
+                  <Text style={styles.confirmLabel}>{t.customer}:</Text>
+                  <View style={styles.confirmCustomer}>
+                    <View style={styles.confirmAvatar}>
+                      <Text style={styles.confirmAvatarText}>
+                        {parsed.customer.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                      </Text>
+                    </View>
+                    <View>
+                      <Text style={styles.confirmCustomerName}>{parsed.customer.name}</Text>
+                      <Text style={styles.confirmCustomerBalance}>
+                        {language === 'ur' ? 'بقایا:' : 'Balance:'} {formatCurrency(parsed.customer.balance)}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
-              )}
-              {parsedResult.amount && (
-                <View style={styles.confirmRow}>
-                  <Text style={styles.confirmLabel}>Amount:</Text>
-                  <Text style={[styles.confirmValue, { color: parsedResult.type === 'credit' ? theme.credit : theme.payment }]}>
-                    {formatCurrency(parsedResult.amount)}
+              ) : null}
+
+              {parsed.amount ? (
+                <View style={styles.confirmAmountRow}>
+                  <Text style={styles.confirmAmountLabel}>{t.amount}</Text>
+                  <Text
+                    style={[
+                      styles.confirmAmountValue,
+                      { color: parsed.type === 'credit' ? theme.credit : theme.payment },
+                    ]}
+                  >
+                    {parsed.type === 'credit' ? '+' : '-'}{formatCurrency(parsed.amount)}
                   </Text>
                 </View>
-              )}
-              {!parsedResult.customer && parsedResult.name && (
+              ) : null}
+
+              {!parsed.customer && (parsed.type === 'credit' || parsed.type === 'debit' || parsed.type === 'query_balance' || parsed.type === 'reminder') ? (
                 <View style={styles.confirmWarning}>
-                  <MaterialIcons name="warning" size={16} color={theme.warningDark} />
-                  <Text style={styles.confirmWarningText}>Customer "{parsedResult.name}" not found</Text>
+                  <MaterialIcons name="warning-amber" size={18} color="#D97706" />
+                  <Text style={styles.confirmWarningText}>
+                    {language === 'ur'
+                      ? `گاہک "${parsed.name}" نہیں ملا`
+                      : `Customer "${parsed.name}" not found`}
+                  </Text>
                 </View>
-              )}
+              ) : null}
             </View>
+
             <View style={styles.confirmActions}>
-              <Pressable style={styles.confirmCancelBtn} onPress={() => { setShowConfirmation(false); setParsedResult(null); }}>
-                <Text style={styles.confirmCancelText}>Cancel</Text>
+              <Pressable style={styles.confirmCancelBtn} onPress={handleCancel}>
+                <MaterialIcons name="close" size={18} color={theme.credit} />
+                <Text style={styles.confirmCancelText}>{t.cancel}</Text>
               </Pressable>
               <Pressable
-                style={[styles.confirmOkBtn, !parsedResult.customer && parsedResult.type !== 'summary' && { opacity: 0.5 }]}
+                style={[
+                  styles.confirmOkBtn,
+                  !parsed.customer && (parsed.type === 'credit' || parsed.type === 'debit' || parsed.type === 'reminder') && styles.confirmOkBtnDisabled,
+                ]}
                 onPress={handleConfirm}
-                disabled={!parsedResult.customer && parsedResult.type !== 'summary'}
+                disabled={!parsed.customer && (parsed.type === 'credit' || parsed.type === 'debit' || parsed.type === 'reminder')}
               >
-                <Text style={styles.confirmOkText}>Confirm</Text>
+                <MaterialIcons name="check" size={18} color="#FFF" />
+                <Text style={styles.confirmOkText}>{t.confirm}</Text>
               </Pressable>
             </View>
           </View>
         </View>
-      )}
+      ) : null}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.background },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.borderLight },
+  rtlRow: { flexDirection: 'row-reverse' },
+  rtlText: { writingDirection: 'rtl', textAlign: 'right' },
+
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: theme.borderLight,
+  },
   backBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: theme.textPrimary },
-  langBtn: { backgroundColor: theme.primary, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16 },
-  langBtnText: { color: '#FFF', fontSize: 13, fontWeight: '700' },
-  statusArea: { marginHorizontal: 16, marginTop: 24, minHeight: 120, justifyContent: 'center', alignItems: 'center' },
-  listeningBox: { alignItems: 'center' },
-  waveContainer: { flexDirection: 'row', alignItems: 'center', gap: 4, height: 50 },
-  wavebar: { width: 4, height: 40, borderRadius: 2 },
-  listeningText: { fontSize: 18, fontWeight: '700', color: theme.primary, marginTop: 12 },
-  langHint: { fontSize: 13, color: theme.textMuted, marginTop: 4 },
-  transcriptBox: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: theme.surface, padding: 16, borderRadius: theme.borderRadius.md, gap: 8, width: '100%', ...theme.cardShadow },
-  transcriptText: { flex: 1, fontSize: 16, color: theme.textDark, lineHeight: 24 },
-  idleBox: { alignItems: 'center' },
-  idleText: { fontSize: 16, color: theme.textSecondary, marginTop: 12, fontWeight: '500' },
-  idleHint: { fontSize: 13, color: theme.textMuted, marginTop: 4 },
-  micContainer: { alignItems: 'center', marginTop: 32 },
-  pulseRing: { position: 'absolute', width: 100, height: 100, borderRadius: 50, backgroundColor: theme.primary },
-  micButton: { width: 80, height: 80, borderRadius: 40, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', elevation: 4, shadowColor: theme.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
-  micButtonActive: { backgroundColor: theme.credit },
-  micLabel: { fontSize: 13, color: theme.textMuted, marginTop: 12, fontWeight: '500' },
-  section: { marginTop: 32, paddingHorizontal: 16 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: theme.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
-  commandCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.surface, padding: 14, borderRadius: theme.borderRadius.md, marginBottom: 8, ...theme.cardShadow },
-  commandIcon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  commandText: { flex: 1, fontSize: 14, color: theme.textDark, fontWeight: '500', marginLeft: 12 },
-  tipsCard: { flexDirection: 'row', marginHorizontal: 16, marginTop: 24, backgroundColor: '#FFF8E1', borderRadius: theme.borderRadius.md, padding: 14, borderWidth: 1, borderColor: '#FFE082' },
-  tipsTitle: { fontSize: 14, fontWeight: '700', color: theme.warningDark },
-  tipsText: { fontSize: 13, color: theme.textSecondary, marginTop: 2, lineHeight: 18 },
-  confirmOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  confirmModal: { backgroundColor: theme.surface, borderRadius: theme.borderRadius.xl, width: '100%', maxWidth: 340, overflow: 'hidden' },
-  confirmHeader: { alignItems: 'center', paddingTop: 24, paddingBottom: 16 },
-  confirmTitle: { fontSize: 18, fontWeight: '700', color: theme.textDark, marginTop: 8 },
-  confirmBody: { paddingHorizontal: 24, paddingBottom: 20 },
-  confirmRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: theme.borderLight },
-  confirmLabel: { fontSize: 14, color: theme.textMuted },
-  confirmValue: { fontSize: 14, fontWeight: '700', color: theme.textDark },
-  confirmWarning: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFF3E0', padding: 10, borderRadius: 8, marginTop: 12 },
-  confirmWarningText: { fontSize: 12, color: theme.warningDark, fontWeight: '500' },
-  confirmActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: theme.borderLight },
-  confirmCancelBtn: { flex: 1, paddingVertical: 16, alignItems: 'center', borderRightWidth: 1, borderRightColor: theme.borderLight },
-  confirmCancelText: { fontSize: 15, color: theme.textSecondary, fontWeight: '600' },
-  confirmOkBtn: { flex: 1, paddingVertical: 16, alignItems: 'center', backgroundColor: theme.backgroundSecondary },
-  confirmOkText: { fontSize: 15, color: theme.primary, fontWeight: '700' },
+  headerCenter: { flex: 1, alignItems: 'center' },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: theme.textDark },
+  headerSubtitle: { fontSize: 11, color: theme.textMuted, marginTop: 2 },
+  modeBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: theme.backgroundSecondary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+
+  // Visualizer
+  visualizerArea: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  ringContainer: {
+    width: 220,
+    height: 220,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  outerRing: {
+    position: 'absolute',
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+  },
+  middleRing: {
+    position: 'absolute',
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+  },
+  micButton: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 12 },
+      android: { elevation: 8 },
+      default: {},
+    }),
+  },
+  statusText: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 24,
+    letterSpacing: -0.2,
+  },
+  waveform: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    height: 40,
+    marginTop: 14,
+  },
+  waveBar: {
+    width: 5,
+    height: 30,
+    borderRadius: 3,
+  },
+  transcriptBubble: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginTop: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFF',
+    borderRadius: 14,
+    maxWidth: '90%',
+    borderWidth: 1,
+    borderColor: theme.borderLight,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6 },
+      android: { elevation: 2 },
+      default: {},
+    }),
+  },
+  transcriptText: {
+    flex: 1,
+    fontSize: 14,
+    color: theme.textDark,
+    fontWeight: '500',
+    lineHeight: 21,
+  },
+
+  // Text mode
+  textInputCard: {
+    marginHorizontal: 20,
+    marginBottom: 20,
+    backgroundColor: '#FFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: theme.borderLight,
+  },
+  textInputLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.textSecondary,
+    marginBottom: 8,
+  },
+  textInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  textInput: {
+    flex: 1,
+    backgroundColor: theme.background,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: theme.textDark,
+    borderWidth: 1,
+    borderColor: theme.borderLight,
+  },
+  sendBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: theme.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Sections
+  section: {
+    paddingHorizontal: 20,
+    marginTop: 8,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 14,
+  },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: theme.textDark,
+  },
+
+  // Chips
+  chipGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  chipCard: {
+    width: '48%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#FFF',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: theme.borderLight,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6 },
+      android: { elevation: 1 },
+      default: {},
+    }),
+  },
+  chipIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chipText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.textDark,
+  },
+
+  // History
+  historyList: {
+    backgroundColor: '#FFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: theme.borderLight,
+    overflow: 'hidden',
+  },
+  historyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.borderLight,
+  },
+  historyIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historyText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.textDark,
+  },
+  historyResult: {
+    fontSize: 11,
+    color: theme.textMuted,
+    marginTop: 2,
+  },
+  historyTime: {
+    fontSize: 10,
+    color: theme.textMuted,
+    fontWeight: '500',
+  },
+
+  // Tips
+  tipsCard: {
+    marginHorizontal: 20,
+    marginTop: 24,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  tipsGradient: {
+    flexDirection: 'row',
+    padding: 14,
+    alignItems: 'flex-start',
+  },
+  tipsTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  tipsText: {
+    fontSize: 12,
+    color: '#78350F',
+    marginTop: 4,
+    lineHeight: 17,
+  },
+
+  // Confirm Modal
+  confirmOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  confirmModal: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#FFF',
+    borderRadius: 24,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.3, shadowRadius: 24 },
+      android: { elevation: 16 },
+      default: {},
+    }),
+  },
+  confirmHeader: {
+    paddingTop: 28,
+    paddingBottom: 20,
+    alignItems: 'center',
+  },
+  confirmIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#FFF',
+    marginTop: 12,
+    letterSpacing: -0.2,
+  },
+  confirmBody: {
+    padding: 20,
+  },
+  confirmRow: {
+    marginBottom: 16,
+  },
+  confirmLabel: {
+    fontSize: 11,
+    color: theme.textMuted,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  confirmValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.textDark,
+  },
+  confirmCustomer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 6,
+  },
+  confirmAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: theme.backgroundSecondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmAvatarText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: theme.primary,
+  },
+  confirmCustomerName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: theme.textDark,
+  },
+  confirmCustomerBalance: {
+    fontSize: 12,
+    color: theme.textMuted,
+    marginTop: 2,
+  },
+  confirmAmountRow: {
+    backgroundColor: theme.background,
+    borderRadius: 14,
+    padding: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  confirmAmountLabel: {
+    fontSize: 13,
+    color: theme.textSecondary,
+    fontWeight: '600',
+  },
+  confirmAmountValue: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  confirmWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEF3C7',
+    padding: 10,
+    borderRadius: 10,
+    marginTop: 8,
+  },
+  confirmWarningText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#92400E',
+    fontWeight: '600',
+  },
+  confirmActions: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    gap: 10,
+  },
+  confirmCancelBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: theme.creditLight,
+  },
+  confirmCancelText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: theme.credit,
+  },
+  confirmOkBtn: {
+    flex: 1.4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: theme.primary,
+  },
+  confirmOkBtnDisabled: {
+    backgroundColor: theme.textMuted,
+    opacity: 0.6,
+  },
+  confirmOkText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFF',
+  },
 });
