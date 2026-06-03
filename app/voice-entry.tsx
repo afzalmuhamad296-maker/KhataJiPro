@@ -8,6 +8,10 @@ import { theme } from '../constants/theme';
 import { useApp } from '../contexts/AppContext';
 import { useAlert } from '@/template';
 import * as Haptics from 'expo-haptics';
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from 'expo-speech-recognition';
 
 type VoiceState = 'idle' | 'listening' | 'processing' | 'speaking' | 'error';
 
@@ -38,11 +42,14 @@ export default function VoiceEntryScreen() {
 
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [transcript, setTranscript] = useState('');
+  const [interimTranscript, setInterimTranscript] = useState('');
   const [textInput, setTextInput] = useState('');
   const [parsed, setParsed] = useState<ParsedCommand | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [history, setHistory] = useState<VoiceHistoryItem[]>([]);
   const [showTextMode, setShowTextMode] = useState(false);
+  const [permissionStatus, setPermissionStatus] = useState<'unknown' | 'granted' | 'denied'>('unknown');
+  const [recognitionAvailable, setRecognitionAvailable] = useState(true);
 
   // Animations
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -62,14 +69,86 @@ export default function VoiceEntryScreen() {
     error: { bg: theme.credit, ring: 'rgba(220,38,38,0.3)', label: theme.credit },
   };
 
-  // Animation logic by state
+  // ===== Speech Recognition Permissions =====
+  useEffect(() => {
+    (async () => {
+      try {
+        const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+        if (result.granted) {
+          setPermissionStatus('granted');
+        } else {
+          setPermissionStatus('denied');
+        }
+      } catch (err) {
+        // Module not available (e.g., older devices, unsupported web browsers)
+        setRecognitionAvailable(false);
+        setPermissionStatus('denied');
+      }
+    })();
+
+    return () => {
+      // Stop any ongoing recognition on unmount
+      try {
+        ExpoSpeechRecognitionModule.stop();
+      } catch {}
+    };
+  }, []);
+
+  // ===== Live Speech Recognition Events =====
+  useSpeechRecognitionEvent('start', () => {
+    setVoiceState('listening');
+    setTranscript('');
+    setInterimTranscript('');
+  });
+
+  useSpeechRecognitionEvent('end', () => {
+    // If recognition ended without final result, return to idle
+    setVoiceState((prev) => (prev === 'listening' ? 'idle' : prev));
+  });
+
+  useSpeechRecognitionEvent('result', (event: any) => {
+    const result = event.results?.[0];
+    if (!result) return;
+
+    const text = result.transcript || '';
+    const isFinal = event.isFinal === true;
+
+    if (isFinal) {
+      setInterimTranscript('');
+      setTranscript(text);
+      // Stop recognition and process final result
+      try {
+        ExpoSpeechRecognitionModule.stop();
+      } catch {}
+      processCommand(text);
+    } else {
+      // Live interim transcription
+      setInterimTranscript(text);
+    }
+  });
+
+  useSpeechRecognitionEvent('error', (event: any) => {
+    setVoiceState('error');
+    setInterimTranscript('');
+    const code = event.error || 'unknown';
+    const msg = code === 'not-allowed'
+      ? (language === 'ur' ? 'مائیکروفون کی اجازت درکار ہے' : 'Microphone permission required')
+      : code === 'no-speech'
+      ? (language === 'ur' ? 'کچھ سنائی نہیں دیا' : 'No speech detected')
+      : code === 'network'
+      ? (language === 'ur' ? 'انٹرنیٹ کنکشن ضروری' : 'Network connection needed')
+      : (language === 'ur' ? 'سپیچ ریکگنیشن ناکام' : 'Speech recognition failed');
+    showAlert(t.error, msg);
+    setTimeout(() => setVoiceState('idle'), 2000);
+  });
+
+  // ===== State-driven animations =====
   useEffect(() => {
     pulseAnim.stopAnimation();
     ringAnim.stopAnimation();
     spinAnim.stopAnimation();
 
     if (voiceState === 'listening') {
-      // Pulse + ring
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 1.12, duration: 700, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
@@ -121,12 +200,11 @@ export default function VoiceEntryScreen() {
     { text: 'Imran ko reminder bhejen', icon: 'notifications-active', color: '#7C3AED' },
   ];
 
-  // Parse command - supports both Urdu script and roman urdu / English
+  // ===== NLP Parser =====
   const parseCommand = useCallback((rawText: string): ParsedCommand | null => {
     const text = rawText.toLowerCase().trim();
     const original = rawText.trim();
 
-    // Helper to find customer by name (fuzzy)
     const findCustomer = (name: string) => {
       const n = name.toLowerCase().trim();
       return customers.find(c =>
@@ -134,18 +212,14 @@ export default function VoiceEntryScreen() {
       );
     };
 
-    // Extract amount from text (handles English digits, Urdu digits)
     const extractAmount = (s: string): number | null => {
-      // Convert Urdu digits to English
       const urduToEng: Record<string, string> = { '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4', '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9' };
       const normalized = s.replace(/[۰-۹]/g, d => urduToEng[d] || d);
       const match = normalized.match(/(\d+)/);
       return match ? parseInt(match[1]) : null;
     };
 
-    // ===== CREDIT patterns (give credit) =====
-    // Roman: "X ko Y udhaar do" / "X ko Y rupees udhaar"
-    // Urdu: "X کو Y ادھار دو"
+    // CREDIT patterns
     const creditPatterns = [
       /^(.+?)\s+(?:ko|کو)\s+([\d۰-۹]+).*?(?:udhaar|ادھار|credit)/i,
       /(?:credit|udhaar|ادھار).*?(.+?)\s+(?:to|کو|ko)\s*([\d۰-۹]+)/i,
@@ -170,11 +244,11 @@ export default function VoiceEntryScreen() {
       }
     }
 
-    // ===== DEBIT patterns (receive payment) =====
+    // DEBIT patterns
     const debitPatterns = [
       /^(.+?)\s+(?:se|سے)\s+([\d۰-۹]+).*?(?:wapas|واپس|payment|ادائیگی)/i,
       /(?:payment|wapas|واپس).*?(.+?)\s+(?:se|سے)\s*([\d۰-۹]+)/i,
-      /^(.+?)\s+([\d۰-۹]+)\s+(?:wapas|واپس|paid|paid)/i,
+      /^(.+?)\s+([\d۰-۹]+)\s+(?:wapas|واپس|paid)/i,
       /received\s+([\d۰-۹]+)\s+from\s+(.+)/i,
     ];
     for (const p of debitPatterns) {
@@ -201,7 +275,7 @@ export default function VoiceEntryScreen() {
       }
     }
 
-    // ===== Balance Query =====
+    // Balance Query
     if (/(?:balance|بقایا|hisaab|حساب).*?(.+)|(.+)\s+(?:ka|کا)\s+(?:balance|بقایا|hisaab|حساب)/i.test(original)) {
       const m = original.match(/(.+?)\s+(?:ka|کا)\s+(?:balance|بقایا|hisaab|حساب)/i);
       const name = m ? m[1].trim() : '';
@@ -215,7 +289,7 @@ export default function VoiceEntryScreen() {
       };
     }
 
-    // ===== Today's Summary =====
+    // Today's Summary
     if (/(?:aaj|آج|today).*?(?:hisaab|حساب|summary|سار)/i.test(text) || /summary|sara hisaab/i.test(text)) {
       return {
         type: 'query_summary',
@@ -225,7 +299,7 @@ export default function VoiceEntryScreen() {
       };
     }
 
-    // ===== Rate Query =====
+    // Rate Query
     const rateMatch = original.match(/(.+?)\s+(?:ka|کا)\s+(?:rate|ریٹ|price|قیمت)/i);
     if (rateMatch) {
       const item = rateMatch[1].trim();
@@ -238,7 +312,7 @@ export default function VoiceEntryScreen() {
       };
     }
 
-    // ===== New Customer =====
+    // New Customer
     if (/(?:naya|نیا|new)\s+(?:customer|گاہک)/i.test(text)) {
       return {
         type: 'add_customer',
@@ -248,7 +322,7 @@ export default function VoiceEntryScreen() {
       };
     }
 
-    // ===== Reminder =====
+    // Reminder
     const remMatch = original.match(/(.+?)\s+(?:ko|کو)\s+(?:reminder|یاد دہانی)/i);
     if (remMatch) {
       const name = remMatch[1].trim();
@@ -265,28 +339,73 @@ export default function VoiceEntryScreen() {
     return null;
   }, [customers]);
 
-  // Mic press handler - simulates speech recognition
-  const handleMicPress = () => {
+  // ===== Real Speech Recognition Start/Stop =====
+  const startRecognition = useCallback(async () => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     }
 
-    if (voiceState === 'idle' || voiceState === 'error') {
-      setVoiceState('listening');
-      setTranscript('');
-      setParsed(null);
+    if (!recognitionAvailable) {
+      setShowTextMode(true);
+      showAlert(
+        t.error,
+        language === 'ur'
+          ? 'سپیچ ریکگنیشن دستیاب نہیں۔ ٹیکسٹ موڈ استعمال کریں۔'
+          : 'Speech recognition unavailable. Use text mode instead.'
+      );
+      return;
+    }
 
-      // Simulate listening for ~3 seconds, then if no command provided via chip, go to error
-      setTimeout(() => {
-        setVoiceState(prev => {
-          if (prev === 'listening' && !transcript) {
-            return 'idle';
-          }
-          return prev;
-        });
-      }, 8000);
+    if (permissionStatus === 'denied') {
+      try {
+        const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+        if (!result.granted) {
+          showAlert(
+            t.error,
+            language === 'ur'
+              ? 'مائیکروفون کی اجازت درکار ہے۔ سیٹنگز سے دیں۔'
+              : 'Microphone permission required. Please enable in settings.'
+          );
+          return;
+        }
+        setPermissionStatus('granted');
+      } catch {
+        setShowTextMode(true);
+        return;
+      }
+    }
+
+    try {
+      // Pick locale based on app language
+      const lang = language === 'ur' ? 'ur-PK' : 'en-US';
+      ExpoSpeechRecognitionModule.start({
+        lang,
+        interimResults: true,
+        maxAlternatives: 1,
+        continuous: false,
+        requiresOnDeviceRecognition: false,
+        addsPunctuation: true,
+        contextualStrings: customers.slice(0, 50).map(c => c.name),
+      });
+    } catch (err: any) {
+      setVoiceState('error');
+      showAlert(t.error, err?.message || (language === 'ur' ? 'شروع نہیں ہو سکا' : 'Could not start'));
+      setTimeout(() => setVoiceState('idle'), 2000);
+    }
+  }, [language, permissionStatus, recognitionAvailable, customers, t, showAlert]);
+
+  const stopRecognition = useCallback(() => {
+    try {
+      ExpoSpeechRecognitionModule.stop();
+    } catch {}
+    setVoiceState('idle');
+  }, []);
+
+  const handleMicPress = () => {
+    if (voiceState === 'idle' || voiceState === 'error') {
+      startRecognition();
     } else if (voiceState === 'listening') {
-      setVoiceState('idle');
+      stopRecognition();
     }
   };
 
@@ -306,7 +425,7 @@ export default function VoiceEntryScreen() {
         addToHistory(command, 'failed', language === 'ur' ? 'سمجھ نہیں آیا' : 'Not understood');
         setTimeout(() => setVoiceState('idle'), 2000);
       }
-    }, 1200);
+    }, 800);
   };
 
   const handleChipPress = (cmd: string) => {
@@ -403,6 +522,7 @@ export default function VoiceEntryScreen() {
     setShowConfirm(false);
     setParsed(null);
     setTranscript('');
+    setInterimTranscript('');
     setVoiceState('idle');
   };
 
@@ -410,12 +530,13 @@ export default function VoiceEntryScreen() {
     setShowConfirm(false);
     setParsed(null);
     setTranscript('');
+    setInterimTranscript('');
     setVoiceState('idle');
   };
 
   const colors = stateColors[voiceState];
   const stateLabel = {
-    idle: language === 'ur' ? t.voiceIdle : t.voiceIdle,
+    idle: t.voiceIdle,
     listening: t.voiceListen,
     processing: t.voiceProcess,
     speaking: t.voiceSpeak,
@@ -425,6 +546,9 @@ export default function VoiceEntryScreen() {
   const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
   const ringScale = ringAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.6] });
   const ringOpacity = ringAnim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] });
+
+  // Display transcript: prefer final, fall back to interim while listening
+  const displayTranscript = transcript || interimTranscript;
 
   return (
     <SafeAreaView edges={['top']} style={styles.container}>
@@ -436,7 +560,7 @@ export default function VoiceEntryScreen() {
         <View style={styles.headerCenter}>
           <Text style={[styles.headerTitle, isRTL && styles.rtlText]}>{t.voiceEntry}</Text>
           <Text style={[styles.headerSubtitle, isRTL && styles.rtlText]}>
-            {language === 'ur' ? 'اے آئی پاور بولیں' : 'AI-Powered Voice'}
+            {language === 'ur' ? `براہ راست ${language === 'ur' ? 'ur-PK' : 'en-US'}` : `Live ${language === 'ur' ? 'ur-PK' : 'en-US'}`}
           </Text>
         </View>
         <Pressable
@@ -447,6 +571,40 @@ export default function VoiceEntryScreen() {
         </Pressable>
       </View>
 
+      {/* Permission Banner */}
+      {permissionStatus === 'denied' && recognitionAvailable ? (
+        <View style={styles.permBanner}>
+          <MaterialIcons name="mic-off" size={16} color="#B45309" />
+          <Text style={[styles.permBannerText, isRTL && styles.rtlText]}>
+            {language === 'ur'
+              ? 'مائیکروفون کی اجازت ضروری ہے'
+              : 'Microphone permission required for voice input'}
+          </Text>
+          <Pressable
+            onPress={async () => {
+              const r = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+              setPermissionStatus(r.granted ? 'granted' : 'denied');
+            }}
+            style={styles.permBannerBtn}
+          >
+            <Text style={styles.permBannerBtnText}>
+              {language === 'ur' ? 'اجازت دیں' : 'Allow'}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {!recognitionAvailable ? (
+        <View style={[styles.permBanner, { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5' }]}>
+          <MaterialIcons name="error-outline" size={16} color="#B91C1C" />
+          <Text style={[styles.permBannerText, { color: '#991B1B' }, isRTL && styles.rtlText]}>
+            {language === 'ur'
+              ? 'سپیچ ریکگنیشن اس ڈیوائس پر دستیاب نہیں'
+              : 'Speech recognition not available — use text mode'}
+          </Text>
+        </View>
+      ) : null}
+
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
@@ -454,7 +612,6 @@ export default function VoiceEntryScreen() {
       >
         {/* Voice Visualizer Area */}
         <View style={styles.visualizerArea}>
-          {/* Rings */}
           <View style={styles.ringContainer}>
             <Animated.View
               style={[
@@ -476,7 +633,6 @@ export default function VoiceEntryScreen() {
               ]}
             />
 
-            {/* Central Mic Button */}
             <Pressable onPress={handleMicPress} disabled={voiceState === 'processing'}>
               <Animated.View
                 style={[
@@ -488,7 +644,7 @@ export default function VoiceEntryScreen() {
                 <MaterialIcons
                   name={
                     voiceState === 'idle' ? 'mic' :
-                    voiceState === 'listening' ? 'mic' :
+                    voiceState === 'listening' ? 'graphic-eq' :
                     voiceState === 'processing' ? 'autorenew' :
                     voiceState === 'speaking' ? 'volume-up' :
                     'error-outline'
@@ -500,8 +656,13 @@ export default function VoiceEntryScreen() {
             </Pressable>
           </View>
 
-          {/* Status text */}
           <Text style={[styles.statusText, { color: colors.label }]}>{stateLabel}</Text>
+
+          {/* Locale badge */}
+          <View style={styles.localeBadge}>
+            <MaterialIcons name="language" size={12} color={theme.textMuted} />
+            <Text style={styles.localeText}>{language === 'ur' ? 'ur-PK' : 'en-US'}</Text>
+          </View>
 
           {/* Waveform */}
           {(voiceState === 'listening' || voiceState === 'speaking') && (
@@ -521,11 +682,30 @@ export default function VoiceEntryScreen() {
             </View>
           )}
 
-          {/* Transcript display */}
-          {transcript ? (
-            <View style={styles.transcriptBubble}>
+          {/* Live transcript display */}
+          {displayTranscript ? (
+            <View style={[
+              styles.transcriptBubble,
+              !!interimTranscript && !transcript && styles.transcriptBubbleInterim,
+            ]}>
               <MaterialIcons name="format-quote" size={14} color={theme.textMuted} />
-              <Text style={[styles.transcriptText, isRTL && styles.rtlText]}>{transcript}</Text>
+              <Text style={[
+                styles.transcriptText,
+                !!interimTranscript && !transcript && styles.transcriptTextInterim,
+                isRTL && styles.rtlText,
+              ]}>
+                {displayTranscript}
+                {!!interimTranscript && !transcript && voiceState === 'listening' ? (
+                  <Text style={styles.cursorBlink}>|</Text>
+                ) : null}
+              </Text>
+            </View>
+          ) : voiceState === 'listening' ? (
+            <View style={styles.transcriptBubble}>
+              <MaterialIcons name="mic" size={14} color="#2563EB" />
+              <Text style={[styles.transcriptHint, isRTL && styles.rtlText]}>
+                {language === 'ur' ? 'بولیں...' : 'Speak now...'}
+              </Text>
             </View>
           ) : null}
         </View>
@@ -556,7 +736,7 @@ export default function VoiceEntryScreen() {
           </View>
         ) : null}
 
-        {/* Suggested Commands - Chips */}
+        {/* Suggested Commands */}
         <View style={styles.section}>
           <View style={[styles.sectionHeader, isRTL && styles.rtlRow]}>
             <MaterialIcons name="auto-awesome" size={18} color={theme.primary} />
@@ -638,8 +818,8 @@ export default function VoiceEntryScreen() {
               </Text>
               <Text style={[styles.tipsText, isRTL && styles.rtlText]}>
                 {language === 'ur'
-                  ? 'گاہک کا نام صاف بولیں پھر رقم۔ اردو، انگریزی اور رومن اردو میں کام کرتا ہے۔'
-                  : 'Speak customer name clearly followed by amount. Works in Urdu, English & Roman Urdu.'}
+                  ? 'گاہک کا نام صاف بولیں پھر رقم۔ لائیو ٹرانسکرپشن چالو ہے۔ اردو، انگریزی اور رومن اردو سب کام کرتے ہیں۔'
+                  : 'Speak customer name clearly followed by amount. Live transcription enabled. Works in Urdu, English & Roman Urdu.'}
               </Text>
             </View>
           </LinearGradient>
@@ -759,10 +939,30 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
 
+  // Permission banner
+  permBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#FDE68A',
+  },
+  permBannerText: { flex: 1, fontSize: 12, color: '#92400E', fontWeight: '600' },
+  permBannerBtn: {
+    backgroundColor: '#92400E',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  permBannerBtnText: { fontSize: 11, fontWeight: '700', color: '#FFF' },
+
   // Visualizer
   visualizerArea: {
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 36,
     paddingHorizontal: 20,
   },
   ringContainer: {
@@ -801,6 +1001,19 @@ const styles = StyleSheet.create({
     marginTop: 24,
     letterSpacing: -0.2,
   },
+  localeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFF',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: theme.borderLight,
+  },
+  localeText: { fontSize: 10, fontWeight: '700', color: theme.textMuted, letterSpacing: 0.5 },
   waveform: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -831,12 +1044,29 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
+  transcriptBubbleInterim: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+  },
   transcriptText: {
     flex: 1,
     fontSize: 14,
     color: theme.textDark,
     fontWeight: '500',
     lineHeight: 21,
+  },
+  transcriptTextInterim: {
+    color: '#1E40AF',
+    fontStyle: 'italic',
+  },
+  transcriptHint: {
+    fontSize: 13,
+    color: '#2563EB',
+    fontWeight: '600',
+  },
+  cursorBlink: {
+    color: '#2563EB',
+    fontWeight: '300',
   },
 
   // Text mode
