@@ -38,6 +38,8 @@ export interface ItemRate {
   rate: number;
   unit: string;
   category: string;
+  previousRate?: number;
+  lastUpdated?: string;
 }
 
 export interface AppSettings {
@@ -137,16 +139,16 @@ export const mockTransactions: Transaction[] = [
 ];
 
 export const mockItemRates: ItemRate[] = [
-  { id: 'r1', name: 'Atta (10kg)', rate: 2100, unit: 'bag', category: 'Flour' },
-  { id: 'r2', name: 'Atta (20kg)', rate: 4000, unit: 'bag', category: 'Flour' },
-  { id: 'r3', name: 'Cheeni (1kg)', rate: 250, unit: 'kg', category: 'Sugar' },
-  { id: 'r4', name: 'Cheeni (5kg)', rate: 1200, unit: 'bag', category: 'Sugar' },
-  { id: 'r5', name: 'Basmati Rice (25kg)', rate: 3000, unit: 'bag', category: 'Rice' },
-  { id: 'r6', name: 'Sella Rice (25kg)', rate: 2500, unit: 'bag', category: 'Rice' },
-  { id: 'r7', name: 'Dalda Ghee (1kg)', rate: 1200, unit: 'pack', category: 'Oil & Ghee' },
-  { id: 'r8', name: 'Dalda Ghee (5kg)', rate: 5500, unit: 'tin', category: 'Oil & Ghee' },
-  { id: 'r9', name: 'Cooking Oil (5L)', rate: 3200, unit: 'bottle', category: 'Oil & Ghee' },
-  { id: 'r10', name: 'Daal Chana (kg)', rate: 300, unit: 'kg', category: 'Pulses' },
+  { id: 'r1', name: 'Atta (10kg)', rate: 2100, unit: 'bag', category: 'Flour', previousRate: 2050, lastUpdated: today },
+  { id: 'r2', name: 'Atta (20kg)', rate: 4000, unit: 'bag', category: 'Flour', previousRate: 4100, lastUpdated: yesterday },
+  { id: 'r3', name: 'Cheeni (1kg)', rate: 250, unit: 'kg', category: 'Sugar', previousRate: 240, lastUpdated: today },
+  { id: 'r4', name: 'Cheeni (5kg)', rate: 1200, unit: 'bag', category: 'Sugar', previousRate: 1250, lastUpdated: twoDaysAgo },
+  { id: 'r5', name: 'Basmati Rice (25kg)', rate: 3000, unit: 'bag', category: 'Rice', previousRate: 2900, lastUpdated: yesterday },
+  { id: 'r6', name: 'Sella Rice (25kg)', rate: 2500, unit: 'bag', category: 'Rice', previousRate: 2500, lastUpdated: threeDaysAgo },
+  { id: 'r7', name: 'Dalda Ghee (1kg)', rate: 1200, unit: 'pack', category: 'Oil & Ghee', previousRate: 1180, lastUpdated: today },
+  { id: 'r8', name: 'Dalda Ghee (5kg)', rate: 5500, unit: 'tin', category: 'Oil & Ghee', previousRate: 5600, lastUpdated: fourDaysAgo },
+  { id: 'r9', name: 'Cooking Oil (5L)', rate: 3200, unit: 'bottle', category: 'Oil & Ghee', previousRate: 3150, lastUpdated: yesterday },
+  { id: 'r10', name: 'Daal Chana (kg)', rate: 300, unit: 'kg', category: 'Pulses', previousRate: 290, lastUpdated: twoDaysAgo },
   { id: 'r11', name: 'Daal Masoor (kg)', rate: 350, unit: 'kg', category: 'Pulses' },
   { id: 'r12', name: 'Daal Moong (kg)', rate: 400, unit: 'kg', category: 'Pulses' },
   { id: 'r13', name: 'Chai Patti (250g)', rate: 350, unit: 'pack', category: 'Beverages' },

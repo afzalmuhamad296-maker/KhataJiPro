@@ -9,10 +9,43 @@ import { useApp } from '../../contexts/AppContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
+const getItemEmoji = (item: { name: string; category?: string }): string => {
+  const name = (item.name || '').toLowerCase();
+  const cat = (item.category || '').toLowerCase();
+  if (name.includes('atta') || cat.includes('flour')) return '🌾';
+  if (name.includes('cheeni') || cat.includes('sugar')) return '🍯';
+  if (name.includes('rice')) return '🍚';
+  if (name.includes('ghee') || name.includes('oil')) return '🛒';
+  if (name.includes('daal')) return '🫘';
+  if (name.includes('chai')) return '☕';
+  if (name.includes('doodh') || cat.includes('dairy')) return '🥛';
+  if (cat.includes('spices') || name.includes('mirch') || name.includes('haldi')) return '🌶';
+  if (name.includes('namak')) return '🧂';
+  if (cat.includes('household') || name.includes('sabun') || name.includes('vim')) return '🧼';
+  return '📦';
+};
+
+const calcRateChange = (current: number, previous?: number): { pct: number; up: boolean; same: boolean } => {
+  if (!previous || previous === 0) return { pct: 0, up: false, same: true };
+  const diff = current - previous;
+  if (diff === 0) return { pct: 0, up: false, same: true };
+  const change = (diff / previous) * 100;
+  return { pct: Math.abs(change), up: change > 0, same: false };
+};
+
+const getDaysAgoText = (dateStr: string | undefined, lang: string): string => {
+  if (!dateStr) return lang === 'ur' ? 'حال ہی میں' : 'Recently';
+  const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+  if (days <= 0) return lang === 'ur' ? 'آج اپ ڈیٹ' : 'Updated today';
+  if (days === 1) return lang === 'ur' ? 'کل اپ ڈیٹ' : 'Updated 1d ago';
+  if (lang === 'ur') return `${days} دن پہلے`;
+  return `Updated ${days}d ago`;
+};
+
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { customers, transactions, settings, t, formatCurrency, getTodayStats, language, isRTL, formatDate } = useApp();
+  const { customers, transactions, settings, itemRates, t, formatCurrency, getTodayStats, language, isRTL, formatDate } = useApp();
   const stats = getTodayStats();
 
   const recentTransactions = transactions.slice(0, 8);
@@ -154,6 +187,102 @@ export default function DashboardScreen() {
             <MaterialIcons name={isRTL ? 'arrow-back-ios' : 'arrow-forward-ios'} size={16} color="#92400E" />
           </LinearGradient>
         </Pressable>
+
+        {/* Rate Book Quick View */}
+        <View style={styles.rateBookSection}>
+          <View style={[styles.rateBookHeader, isRTL && styles.rtlRow]}>
+            <Text style={[styles.sectionTitle, { marginBottom: 0 }, isRTL && styles.rtlText]}>
+              📊 {language === 'ur' ? 'آج کے ریٹ' : "Today's Rates"}
+            </Text>
+            <Pressable
+              onPress={() => router.push('/stock')}
+              style={[styles.seeAllBtn, { marginBottom: 0 }, isRTL && styles.rtlRow]}
+            >
+              <Text style={styles.seeAllText}>📋 {language === 'ur' ? 'سب دیکھیں' : 'View All'}</Text>
+              <MaterialIcons name={isRTL ? 'chevron-left' : 'chevron-right'} size={16} color={theme.primary} />
+            </Pressable>
+          </View>
+
+          {itemRates.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.rateScrollContent}
+            >
+              {itemRates.slice(0, 5).map((item) => {
+                const emoji = getItemEmoji(item);
+                const change = calcRateChange(item.rate, item.previousRate);
+                return (
+                  <Pressable
+                    key={item.id}
+                    style={({ pressed }) => [
+                      styles.rateCard,
+                      pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] },
+                    ]}
+                    onPress={() => router.push('/stock')}
+                  >
+                    <View style={styles.rateEmojiCircle}>
+                      <Text style={styles.rateEmojiText}>{emoji}</Text>
+                    </View>
+                    <Text style={styles.rateName} numberOfLines={2}>
+                      {item.name}
+                    </Text>
+                    <Text style={styles.ratePrice} numberOfLines={1}>
+                      {formatCurrency(item.rate)}/{item.unit}
+                    </Text>
+                    {!change.same ? (
+                      <View
+                        style={[
+                          styles.rateChangeRow,
+                          { backgroundColor: change.up ? '#FEE2E2' : '#DCFCE7' },
+                        ]}
+                      >
+                        <MaterialIcons
+                          name={change.up ? 'arrow-upward' : 'arrow-downward'}
+                          size={11}
+                          color={change.up ? '#DC2626' : '#16A34A'}
+                        />
+                        <Text
+                          style={[
+                            styles.rateChangeText,
+                            { color: change.up ? '#DC2626' : '#16A34A' },
+                          ]}
+                        >
+                          {change.pct.toFixed(1)}%
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={styles.rateChangeRowPlaceholder} />
+                    )}
+                    <Text style={styles.rateUpdated} numberOfLines={1}>
+                      {getDaysAgoText(item.lastUpdated, language)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          ) : (
+            <View style={{ paddingHorizontal: 20 }}>
+              <View style={styles.rateEmpty}>
+                <Text style={styles.rateEmptyEmoji}>🏷️</Text>
+                <Text style={[styles.rateEmptyText, isRTL && styles.rtlText]}>
+                  {language === 'ur'
+                    ? 'کوئی ریٹ موجود نہیں۔ خودکار حساب کے لیے اشیاء شامل کریں۔'
+                    : 'No rates set. Add items for auto-calculation.'}
+                </Text>
+                <Pressable
+                  style={({ pressed }) => [styles.rateAddBtn, pressed && { opacity: 0.85 }]}
+                  onPress={() => router.push('/stock')}
+                >
+                  <MaterialIcons name="add" size={16} color="#FFF" />
+                  <Text style={styles.rateAddBtnText}>
+                    {language === 'ur' ? 'ریٹ شامل کریں' : 'Add Rates'}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
+        </View>
 
         {/* Quick Actions */}
         <View style={styles.section}>
@@ -621,4 +750,109 @@ const styles = StyleSheet.create({
     borderColor: theme.primary + '30',
   },
   footerBtnText: { fontSize: 15, fontWeight: '600', color: theme.primary },
+
+  // Rate Book Section
+  rateBookSection: { marginTop: 28 },
+  rateBookHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 14,
+  },
+  rateScrollContent: {
+    paddingHorizontal: 20,
+    gap: 12,
+    paddingBottom: 4,
+  },
+  rateCard: {
+    width: 130,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: theme.borderLight,
+    ...Platform.select({
+      ios: { shadowColor: '#0D7C4A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 10 },
+      android: { elevation: 3 },
+      default: {},
+    }),
+  },
+  rateEmojiCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: theme.borderLight,
+  },
+  rateEmojiText: { fontSize: 22 },
+  rateName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: theme.textDark,
+    textAlign: 'center',
+    minHeight: 32,
+    lineHeight: 16,
+  },
+  ratePrice: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: theme.payment,
+    marginTop: 6,
+    textAlign: 'center',
+    letterSpacing: -0.2,
+  },
+  rateChangeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginTop: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  rateChangeRowPlaceholder: {
+    height: 18,
+    marginTop: 6,
+  },
+  rateChangeText: { fontSize: 11, fontWeight: '700' },
+  rateUpdated: {
+    fontSize: 9,
+    color: theme.textMuted,
+    marginTop: 6,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  rateEmpty: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: theme.borderLight,
+    borderStyle: 'dashed',
+  },
+  rateEmptyEmoji: { fontSize: 36, marginBottom: 10 },
+  rateEmptyText: {
+    fontSize: 13,
+    color: theme.textMuted,
+    textAlign: 'center',
+    marginBottom: 14,
+    lineHeight: 18,
+  },
+  rateAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: theme.primary,
+  },
+  rateAddBtnText: { color: '#FFF', fontSize: 13, fontWeight: '700' },
 });
