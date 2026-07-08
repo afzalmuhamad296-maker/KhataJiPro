@@ -49,6 +49,10 @@ interface AppContextType {
   updatePaymentMethod: (id: string, updates: Partial<PaymentMethodConfig>) => void;
   togglePaymentMethod: (id: string) => void;
 
+  addItemRate: (item: Omit<ItemRate, 'id'>) => void;
+  updateItemRate: (id: string, updates: Partial<ItemRate>) => void;
+  deleteItemRate: (id: string) => void;
+
   setThemeColor: (k: ThemeColorKey) => void;
   setDarkMode: (v: boolean) => void;
   setFontSize: (s: FontSize) => void;
@@ -86,6 +90,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => { AsyncStorage.setItem(APP_CONFIG.storageKeys.settings, JSON.stringify(settings)); }, [settings]);
   useEffect(() => { AsyncStorage.setItem('kj_paymentMethods', JSON.stringify(paymentMethods)); }, [paymentMethods]);
   useEffect(() => { AsyncStorage.setItem('kj_scanHistory', JSON.stringify(scanHistory)); }, [scanHistory]);
+  useEffect(() => { AsyncStorage.setItem(APP_CONFIG.storageKeys.itemRates, JSON.stringify(itemRates)); }, [itemRates]);
   useEffect(() => { AsyncStorage.setItem(APP_CONFIG.storageKeys.themeColor, themeColor); }, [themeColor]);
   useEffect(() => { AsyncStorage.setItem(APP_CONFIG.storageKeys.darkMode, JSON.stringify(darkMode)); }, [darkMode]);
   useEffect(() => { AsyncStorage.setItem(APP_CONFIG.storageKeys.fontSize, fontSize); }, [fontSize]);
@@ -100,6 +105,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const storedLang = await AsyncStorage.getItem(APP_CONFIG.storageKeys.language);
       const storedPaymentMethods = await AsyncStorage.getItem('kj_paymentMethods');
       const storedScanHistory = await AsyncStorage.getItem('kj_scanHistory');
+      const storedItemRates = await AsyncStorage.getItem(APP_CONFIG.storageKeys.itemRates);
       const storedThemeColor = await AsyncStorage.getItem(APP_CONFIG.storageKeys.themeColor);
       const storedDarkMode = await AsyncStorage.getItem(APP_CONFIG.storageKeys.darkMode);
       const storedFontSize = await AsyncStorage.getItem(APP_CONFIG.storageKeys.fontSize);
@@ -112,6 +118,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (storedLang === 'en' || storedLang === 'ur') setLanguageState(storedLang);
       if (storedPaymentMethods) setPaymentMethods(JSON.parse(storedPaymentMethods));
       if (storedScanHistory) setScanHistory(JSON.parse(storedScanHistory));
+      if (storedItemRates) setItemRates(JSON.parse(storedItemRates));
       if (storedThemeColor) setThemeColorState(storedThemeColor as ThemeColorKey);
       if (storedDarkMode) setDarkModeState(JSON.parse(storedDarkMode));
       if (storedFontSize) setFontSizeState(storedFontSize as FontSize);
@@ -251,6 +258,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPaymentMethods(prev => prev.map(pm => pm.id === id ? { ...pm, enabled: !pm.enabled } : pm));
   };
 
+  const addItemRate = (item: Omit<ItemRate, 'id'>) => {
+    const newItem: ItemRate = {
+      ...item,
+      id: 'r' + Date.now().toString(),
+      lastUpdated: item.lastUpdated || new Date().toISOString(),
+    };
+    setItemRates(prev => [newItem, ...prev]);
+  };
+
+  const updateItemRate = (id: string, updates: Partial<ItemRate>) => {
+    setItemRates(prev => prev.map(r => {
+      if (r.id === id) {
+        const rateChanged = updates.rate !== undefined && updates.rate !== r.rate;
+        return {
+          ...r,
+          ...updates,
+          previousRate: rateChanged ? r.rate : (updates.previousRate ?? r.previousRate),
+          lastUpdated: rateChanged ? new Date().toISOString() : r.lastUpdated,
+        };
+      }
+      return r;
+    }));
+  };
+
+  const deleteItemRate = (id: string) => {
+    setItemRates(prev => prev.filter(r => r.id !== id));
+  };
+
   const setThemeColor = (k: ThemeColorKey) => setThemeColorState(k);
   const setDarkMode = (v: boolean) => setDarkModeState(v);
   const setFontSize = (s: FontSize) => setFontSizeState(s);
@@ -266,6 +301,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updateSettings, setLanguage, getCustomerById, getCustomerTransactions,
     getTodayStats, formatCurrency, formatNumber, formatDate,
     addScanHistory, updatePaymentMethod, togglePaymentMethod,
+    addItemRate, updateItemRate, deleteItemRate,
     setThemeColor, setDarkMode, setFontSize, setUrduNumbers,
     addCustomLanguage, removeCustomLanguage,
   }), [customers, transactions, itemRates, settings, language, paymentMethods, scanHistory, themeColor, darkMode, fontSize, urduNumbers, customLanguages]);
