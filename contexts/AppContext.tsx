@@ -52,6 +52,7 @@ interface AppContextType {
   addItemRate: (item: Omit<ItemRate, 'id'>) => void;
   updateItemRate: (id: string, updates: Partial<ItemRate>) => void;
   deleteItemRate: (id: string) => void;
+  ensureItemRate: (name: string, rate: number, unit?: string, category?: string) => void;
 
   setThemeColor: (k: ThemeColorKey) => void;
   setDarkMode: (v: boolean) => void;
@@ -286,6 +287,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setItemRates(prev => prev.filter(r => r.id !== id));
   };
 
+  const ensureItemRate = (name: string, rate: number, unit: string = 'piece', category: string = 'Other') => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const exists = itemRates.some(r => r.name.toLowerCase() === trimmed.toLowerCase());
+    if (!exists) {
+      addItemRate({ name: trimmed, rate, unit, category });
+    }
+  };
+
   const setThemeColor = (k: ThemeColorKey) => setThemeColorState(k);
   const setDarkMode = (v: boolean) => setDarkModeState(v);
   const setFontSize = (s: FontSize) => setFontSizeState(s);
@@ -301,7 +311,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updateSettings, setLanguage, getCustomerById, getCustomerTransactions,
     getTodayStats, formatCurrency, formatNumber, formatDate,
     addScanHistory, updatePaymentMethod, togglePaymentMethod,
-    addItemRate, updateItemRate, deleteItemRate,
+    addItemRate, updateItemRate, deleteItemRate, ensureItemRate,
     setThemeColor, setDarkMode, setFontSize, setUrduNumbers,
     addCustomLanguage, removeCustomLanguage,
   }), [customers, transactions, itemRates, settings, language, paymentMethods, scanHistory, themeColor, darkMode, fontSize, urduNumbers, customLanguages]);

@@ -15,6 +15,7 @@ export default function RootLayout() {
           <Stack.Screen name="qr-scanner" options={{ presentation: 'fullScreenModal' }} />
           <Stack.Screen name="payment-methods" options={{ presentation: 'card' }} />
           <Stack.Screen name="voice-entry" options={{ presentation: 'card' }} />
+          <Stack.Screen name="voice-control" options={{ presentation: 'card' }} />
           <Stack.Screen name="chat-assistant" options={{ presentation: 'card' }} />
           <Stack.Screen name="reminders" options={{ presentation: 'card' }} />
           <Stack.Screen name="recurring" options={{ presentation: 'card' }} />

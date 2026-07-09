@@ -292,7 +292,7 @@ export default function DashboardScreen() {
               { icon: 'add-circle-outline', label: t.addCredit, color1: '#FEE2E2', color2: '#FECACA', iconColor: theme.credit, route: '/add-credit' },
               { icon: 'payments', label: t.addPayment, color1: '#DCFCE7', color2: '#BBF7D0', iconColor: theme.payment, route: '/add-payment' },
               { icon: 'person-add', label: t.newCustomer, color1: '#DBEAFE', color2: '#BFDBFE', iconColor: '#2563EB', route: '/add-customer' },
-              { icon: 'mic', label: t.voiceEntry, color1: '#F3E8FF', color2: '#E9D5FF', iconColor: '#7C3AED', route: '/voice-entry' },
+              { icon: 'record-voice-over', label: language === 'ur' ? 'وائس کنٹرول' : 'Voice Control', color1: '#EEF2FF', color2: '#E0E7FF', iconColor: '#6366F1', route: '/voice-control' },
             ].map(item => (
               <Pressable
                 key={item.label}

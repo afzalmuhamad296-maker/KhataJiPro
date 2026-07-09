@@ -15,6 +15,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { theme } from '../constants/theme';
 import { useApp } from '../contexts/AppContext';
 import { useAlert } from '@/template';
@@ -79,6 +81,8 @@ export default function StockScreen() {
   const [formUnit, setFormUnit] = useState('kg');
   const [formCategory, setFormCategory] = useState('Other');
   const [formEmoji, setFormEmoji] = useState('📦');
+  const [formImage, setFormImage] = useState<string | undefined>(undefined);
+  const [showImageOptions, setShowImageOptions] = useState(false);
 
   const categories = useMemo(() => {
     const cats = new Set<string>();
@@ -106,6 +110,7 @@ export default function StockScreen() {
     setFormUnit(item.unit);
     setFormCategory(item.category);
     setFormEmoji(getItemEmoji(item));
+    setFormImage(item.image);
     setShowModal(true);
   };
 
@@ -116,6 +121,7 @@ export default function StockScreen() {
     setFormUnit('kg');
     setFormCategory('Other');
     setFormEmoji('📦');
+    setFormImage(undefined);
     setShowModal(true);
   };
 
@@ -123,6 +129,62 @@ export default function StockScreen() {
     setShowModal(false);
     setEditingItem(null);
     setShowEmojiPicker(false);
+    setShowImageOptions(false);
+    setFormImage(undefined);
+  };
+
+  const pickFromCamera = async () => {
+    setShowImageOptions(false);
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        showAlert(
+          language === 'ur' ? 'اجازت درکار' : 'Permission required',
+          language === 'ur' ? 'کیمرہ استعمال کرنے کی اجازت درکار ہے' : 'Camera access is needed to take photos'
+        );
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.6,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        setFormImage(result.assets[0].uri);
+      }
+    } catch (err: any) {
+      showAlert(language === 'ur' ? 'خرابی' : 'Error', err?.message || 'Camera unavailable');
+    }
+  };
+
+  const pickFromGallery = async () => {
+    setShowImageOptions(false);
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        showAlert(
+          language === 'ur' ? 'اجازت درکار' : 'Permission required',
+          language === 'ur' ? 'گیلری تک رسائی درکار ہے' : 'Gallery access needed'
+        );
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.6,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        setFormImage(result.assets[0].uri);
+      }
+    } catch (err: any) {
+      showAlert(language === 'ur' ? 'خرابی' : 'Error', err?.message || 'Gallery unavailable');
+    }
+  };
+
+  const removeImage = () => {
+    setShowImageOptions(false);
+    setFormImage(undefined);
   };
 
   const handleSave = () => {
@@ -141,6 +203,7 @@ export default function StockScreen() {
         rate,
         unit: formUnit,
         category: formCategory,
+        image: formImage,
       });
     } else {
       addItemRate({
@@ -148,6 +211,7 @@ export default function StockScreen() {
         rate,
         unit: formUnit,
         category: formCategory,
+        image: formImage,
       });
     }
     closeModal();
@@ -310,7 +374,11 @@ export default function StockScreen() {
                   onPress={() => openEdit(item)}
                 >
                   <View style={styles.emojiCircle}>
-                    <Text style={styles.emojiText}>{emoji}</Text>
+                    {item.image ? (
+                      <Image source={{ uri: item.image }} style={styles.itemImage} contentFit="cover" transition={150} />
+                    ) : (
+                      <Text style={styles.emojiText}>{emoji}</Text>
+                    )}
                   </View>
                   <View style={{ flex: 1, marginHorizontal: 12 }}>
                     <Text style={[styles.itemName, isRTL && styles.rtlText]} numberOfLines={1}>
@@ -433,15 +501,19 @@ export default function StockScreen() {
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
             >
-              {/* Emoji Picker Trigger */}
+              {/* Image / Emoji Picker Trigger */}
               <View style={styles.emojiRow}>
                 <Pressable
                   style={styles.emojiPreview}
-                  onPress={() => setShowEmojiPicker(!showEmojiPicker)}
+                  onPress={() => setShowImageOptions(true)}
                 >
-                  <Text style={styles.emojiPreviewText}>{formEmoji}</Text>
+                  {formImage ? (
+                    <Image source={{ uri: formImage }} style={styles.emojiPreviewImg} contentFit="cover" transition={150} />
+                  ) : (
+                    <Text style={styles.emojiPreviewText}>{formEmoji}</Text>
+                  )}
                   <View style={styles.emojiEditIcon}>
-                    <MaterialIcons name="edit" size={12} color="#FFF" />
+                    <MaterialIcons name="camera-alt" size={12} color="#FFF" />
                   </View>
                 </Pressable>
                 <View style={{ flex: 1, marginLeft: 14 }}>
@@ -456,6 +528,36 @@ export default function StockScreen() {
                     onChangeText={setFormName}
                   />
                 </View>
+              </View>
+
+              {/* Image / Emoji option chooser */}
+              <View style={styles.imgOptRow}>
+                <Pressable style={styles.imgOptBtn} onPress={pickFromCamera}>
+                  <MaterialIcons name="camera-alt" size={16} color={theme.primary} />
+                  <Text style={styles.imgOptBtnText}>
+                    {language === 'ur' ? 'کیمرہ' : 'Camera'}
+                  </Text>
+                </Pressable>
+                <Pressable style={styles.imgOptBtn} onPress={pickFromGallery}>
+                  <MaterialIcons name="photo-library" size={16} color={theme.primary} />
+                  <Text style={styles.imgOptBtnText}>
+                    {language === 'ur' ? 'گیلری' : 'Gallery'}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={styles.imgOptBtn}
+                  onPress={() => { setShowEmojiPicker(!showEmojiPicker); setShowImageOptions(false); }}
+                >
+                  <MaterialIcons name="emoji-emotions" size={16} color={theme.primary} />
+                  <Text style={styles.imgOptBtnText}>
+                    {language === 'ur' ? 'ایموجی' : 'Emoji'}
+                  </Text>
+                </Pressable>
+                {formImage ? (
+                  <Pressable style={[styles.imgOptBtn, { backgroundColor: theme.creditLight }]} onPress={removeImage}>
+                    <MaterialIcons name="delete-outline" size={16} color={theme.credit} />
+                  </Pressable>
+                ) : null}
               </View>
 
               {/* Emoji Grid */}
@@ -773,6 +875,7 @@ const styles = StyleSheet.create({
     borderColor: theme.borderLight,
   },
   emojiText: { fontSize: 24 },
+  itemImage: { width: 48, height: 48, borderRadius: 16 },
   itemName: { fontSize: 15, fontWeight: '700', color: theme.textDark },
   itemMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 6 },
   catBadge: {
@@ -940,6 +1043,24 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   emojiPreviewText: { fontSize: 32 },
+  emojiPreviewImg: { width: 68, height: 68, borderRadius: 20 },
+  imgOptRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  imgOptBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: theme.primary + '15',
+    borderWidth: 1,
+    borderColor: theme.primary + '25',
+  },
+  imgOptBtnText: { fontSize: 12, fontWeight: '700', color: theme.primary },
   emojiEditIcon: {
     position: 'absolute',
     bottom: -4,
