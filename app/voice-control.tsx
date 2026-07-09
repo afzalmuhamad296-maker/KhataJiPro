@@ -15,7 +15,7 @@ import * as Haptics from 'expo-haptics';
 import {
   ExpoSpeechRecognitionModule,
   useSpeechRecognitionEvent,
-} from 'expo-speech-recognition';
+} from '../services/speechRecognition';
 
 type VoiceState = 'idle' | 'listening' | 'processing' | 'executing' | 'error';
 
