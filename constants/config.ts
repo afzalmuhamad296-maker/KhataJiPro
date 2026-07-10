@@ -551,5 +551,150 @@ export const i18n = {
   },
 };
 
-export type Language = 'en' | 'ur';
+export type Language = 'en' | 'ur' | 'hi' | 'pa' | 'sd' | 'ps' | 'ar' | 'fa';
 export type LangKeys = keyof typeof i18n.en;
+
+// ============= MULTI-LANGUAGE SUPPORT =============
+
+export const SUPPORTED_LANGUAGES = [
+  { code: 'en', name: 'English', native: 'English', dir: 'ltr', flag: '🇬🇧' },
+  { code: 'ur', name: 'Urdu', native: 'اردو', dir: 'rtl', flag: '🇵🇰' },
+  { code: 'hi', name: 'Hindi', native: 'हिन्दी', dir: 'ltr', flag: '🇮🇳' },
+  { code: 'pa', name: 'Punjabi', native: 'پنجابی', dir: 'rtl', flag: '🇵🇰' },
+  { code: 'sd', name: 'Sindhi', native: 'سنڌي', dir: 'rtl', flag: '🇵🇰' },
+  { code: 'ps', name: 'Pashto', native: 'پښتو', dir: 'rtl', flag: '🇦🇫' },
+  { code: 'ar', name: 'Arabic', native: 'العربية', dir: 'rtl', flag: '🇸🇦' },
+  { code: 'fa', name: 'Persian', native: 'فارسی', dir: 'rtl', flag: '🇮🇷' },
+] as const;
+
+// Hindi essentials (fallback to English for missing)
+const partial_hi: Partial<typeof i18n.en> = {
+  appName: 'खाताजी प्रो', home: 'होम', dashboard: 'डैशबोर्ड',
+  customers: 'ग्राहक', udhaar: 'उधार', reports: 'रिपोर्ट', settings: 'सेटिंग्स',
+  save: 'सहेजें', cancel: 'रद्द करें', delete: 'हटाएं', edit: 'संपादित',
+  add: 'जोड़ें', confirm: 'पुष्टि', ok: 'ठीक है', yes: 'हाँ', no: 'नहीं',
+  addCredit: 'उधार जोड़ें', addPayment: 'भुगतान जोड़ें',
+  credit: 'उधार', debit: 'भुगतान', amount: 'राशि',
+  note: 'नोट (वैकल्पिक)', selectCustomer: 'ग्राहक चुनें',
+  totalOutstanding: 'कुल बकाया', todayCredit: 'आज का उधार',
+  todayCollection: 'आज की वसूली', outstanding: 'बकाया',
+  paymentMethod: 'भुगतान का तरीका', cash: 'नकद', bank: 'बैंक',
+  quickActions: 'त्वरित क्रियाएँ', newCustomer: 'नया ग्राहक',
+  success: 'सफल', error: 'त्रुटि', loading: 'लोड...',
+  search: 'खोजें...', free: 'मुस्त', pro: 'प्रो', upgrade: 'अपग्रेड',
+  total: 'कुल', quantity: 'मात्रा', rate: 'दर',
+  addItems: 'आइटम जोड़ें', all: 'सभी', credits: 'उधार', payments: 'भुगतान',
+  totalCredit: 'कुल उधार', totalDebit: 'कुल भुगतान', balance: 'शेष',
+  name: 'नाम', phone: 'फ़ोन', address: 'पता',
+  noTransactions: 'कोई लेन-देन नहीं', today: 'आज', yesterday: 'कल',
+  due: 'बकाया', pending: 'लंबित', clear: 'साफ',
+  seeAll: 'सभी देखें', viewAll: 'सभी देखें',
+  recentActivity: 'हाल की गतिविधि', businessOverview: 'व्यापार सारांश',
+  topOutstanding: 'सबसे ज्यादा बकाया', morning: 'सुप्रभात',
+  afternoon: 'नमस्ते', evening: 'शुभ संध्या',
+};
+
+// Punjabi (Shahmukhi)
+const partial_pa: Partial<typeof i18n.en> = {
+  appName: 'کھاتا جی پرو', home: 'گھر', customers: 'گاہک',
+  udhaar: 'ادھار', reports: 'رپورٹاں', settings: 'سیٹنگاں',
+  addCredit: 'ادھار پاؤ', addPayment: 'پیسے آۓ',
+  credit: 'ادھار', debit: 'ادائیگی', amount: 'رقم',
+  save: 'سنبھالو', cancel: 'رد کرو', delete: 'مٹاؤ', add: 'پاؤ',
+  selectCustomer: 'گاہک چنو', quickActions: 'چھیتی کم',
+  newCustomer: 'نواں گاہک', today: 'اج', yesterday: 'کل',
+  outstanding: 'باقی', totalOutstanding: 'کل باقی',
+  todayCredit: 'اج دا ادھار', todayCollection: 'اج دی وصولی',
+  all: 'سارے', credits: 'ادھار', payments: 'ادائیگیاں',
+  totalCredit: 'کل ادھار', totalDebit: 'کل ادائیگی', balance: 'باقی',
+  name: 'ناں', phone: 'فون', address: 'پتہ',
+  free: 'مفت', pro: 'پرو', total: 'کل', quantity: 'گنتی', rate: 'ریٹ',
+  paymentMethod: 'ادائیگی دا طریقہ', cash: 'نقد', bank: 'بینک',
+  noTransactions: 'کوئی لین دین نہیں', success: 'کامیاب', error: 'خرابی',
+};
+
+// Arabic
+const partial_ar: Partial<typeof i18n.en> = {
+  appName: 'خاطاجي برو', home: 'الرئيسية', dashboard: 'لوحة التحكم',
+  customers: 'العملاء', udhaar: 'الديون', reports: 'التقارير', settings: 'الإعدادات',
+  save: 'حفظ', cancel: 'إلغاء', delete: 'حذف', edit: 'تعديل',
+  add: 'إضافة', confirm: 'تأكيد', ok: 'موافق', yes: 'نعم', no: 'لا',
+  addCredit: 'إضافة دين', addPayment: 'إضافة دفعة',
+  credit: 'دين', debit: 'دفعة', amount: 'المبلغ',
+  note: 'ملاحظة', selectCustomer: 'اختر العميل',
+  totalOutstanding: 'إجمالي المستحق', todayCredit: 'دين اليوم',
+  todayCollection: 'تحصيل اليوم', outstanding: 'المستحق',
+  paymentMethod: 'طريقة الدفع', cash: 'نقدي', bank: 'تحويل بنكي',
+  quickActions: 'إجراءات سريعة', newCustomer: 'عميل جديد',
+  success: 'نجح', error: 'خطأ', loading: 'جار التحميل...',
+  search: 'بحث...', free: 'مجاني', pro: 'برو', upgrade: 'ترقية',
+  total: 'الإجمالي', quantity: 'الكمية', rate: 'السعر',
+  addItems: 'إضافة عناصر', all: 'الكل', credits: 'الديون', payments: 'المدفوعات',
+  totalCredit: 'إجمالي الديون', totalDebit: 'إجمالي المدفوع', balance: 'الرصيد',
+  name: 'الاسم', phone: 'الهاتف', address: 'العنوان',
+  noTransactions: 'لا توجد معاملات', today: 'اليوم', yesterday: 'أمس',
+};
+
+// Pashto
+const partial_ps: Partial<typeof i18n.en> = {
+  appName: 'کھاتا جی پرو', home: 'کور', customers: 'پیرودونکي',
+  udhaar: 'پور', reports: 'راپورونه', settings: 'ترتیبات',
+  addCredit: 'پور اضافه', addPayment: 'تادیه اضافه',
+  credit: 'پور', debit: 'تادیه', amount: 'مقدار',
+  save: 'خوندي کول', cancel: 'لغوه', add: 'اضافه',
+  selectCustomer: 'پیرودونکی وټاکئ', today: 'نن', yesterday: 'پرون',
+  outstanding: 'باقي', all: 'ټول', name: 'نوم', phone: 'ټېلیفون',
+  address: 'پته', total: 'ټول', quantity: 'مقدار', rate: 'نرخ',
+  success: 'بريالیتوب', error: 'تېروتنه', free: 'وړيا',
+};
+
+// Sindhi
+const partial_sd: Partial<typeof i18n.en> = {
+  appName: 'کھاتا جي پرو', home: 'گھر', customers: 'گراہڪ',
+  udhaar: 'اڌار', reports: 'رپورٽون', settings: 'سيٽنگون',
+  addCredit: 'اڌار شامل ڪريو', addPayment: 'ادائيگي شامل ڪريو',
+  credit: 'اڌار', debit: 'ادائيگي', amount: 'رقم',
+  save: 'محفوظ ڪريو', cancel: 'رد ڪريو', add: 'شامل ڪريو',
+  selectCustomer: 'گراہڪ چونڊيو', today: 'اڊ', yesterday: 'ڪل',
+  all: 'سڀ', name: 'نالو', phone: 'فون', total: 'ڊل',
+  outstanding: 'باقي', success: 'ڪاميابي', error: 'غلطي',
+};
+
+// Persian
+const partial_fa: Partial<typeof i18n.en> = {
+  appName: 'خاتاجی پرو', home: 'خانه', customers: 'مشتریان',
+  udhaar: 'بدهی', reports: 'گزارش‌ها', settings: 'تنظیمات',
+  save: 'ذخیره', cancel: 'انصراف', add: 'افزودن', ok: 'باشه',
+  addCredit: 'افزودن بدهی', addPayment: 'افزودن پرداخت',
+  credit: 'بدهی', debit: 'پرداخت', amount: 'مبلغ',
+  selectCustomer: 'انتخاب مشتری', today: 'امروز', yesterday: 'دیروز',
+  all: 'همه', totalOutstanding: 'مجموع بدهی', outstanding: 'بدهی',
+  name: 'نام', phone: 'تلفن', address: 'آدرس',
+  total: 'مجموع', quantity: 'تعداد', rate: 'نرخ',
+  paymentMethod: 'روش پرداخت', cash: 'نقد', bank: 'انتقال بانکی',
+  free: 'رایگان', pro: 'حرفه‌ای', success: 'موفق', error: 'خطا',
+};
+
+const allTranslations: Record<string, typeof i18n.en> = {
+  en: i18n.en,
+  ur: i18n.ur,
+  hi: { ...i18n.en, ...partial_hi },
+  pa: { ...i18n.en, ...partial_pa },
+  ar: { ...i18n.en, ...partial_ar },
+  ps: { ...i18n.en, ...partial_ps },
+  sd: { ...i18n.en, ...partial_sd },
+  fa: { ...i18n.en, ...partial_fa },
+};
+
+export const getTranslations = (lang: string): typeof i18n.en => {
+  return allTranslations[lang] || i18n.en;
+};
+
+export const isRTLLanguage = (lang: string): boolean => {
+  const meta = SUPPORTED_LANGUAGES.find(l => l.code === lang);
+  return meta?.dir === 'rtl';
+};
+
+export const isSupportedLanguage = (lang: string): boolean => {
+  return SUPPORTED_LANGUAGES.some(l => l.code === lang);
+};

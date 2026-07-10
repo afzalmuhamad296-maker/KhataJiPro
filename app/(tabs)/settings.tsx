@@ -380,14 +380,20 @@ export default function SettingsScreen() {
           <Text style={[styles.subLabel, isRTL && styles.rtlText]}>{t.appLanguage}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
             {LANGUAGES.slice(0, 10).map((lang) => {
-              const isSelected = lang.code === language || (lang.code === 'en' && language === 'en') || (lang.code === 'ur' && language === 'ur');
+              const isSelected = lang.code === language;
+              const supportedCodes = ['en', 'ur', 'hi', 'pa', 'sd', 'ps', 'ar', 'fa'];
+              const isBuiltIn = supportedCodes.includes(lang.code);
               return (
                 <Pressable
                   key={lang.code}
                   style={[styles.langCard, isSelected && styles.langCardActive]}
                   onPress={() => {
-                    if (lang.code === 'en' || lang.code === 'ur') setLanguage(lang.code as any);
-                    else showAlert(t.language, `${lang.name} ${language === 'ur' ? 'جلد دستیاب' : 'coming soon'}`);
+                    if (isBuiltIn) {
+                      setLanguage(lang.code as any);
+                      Platform.OS !== 'web' && showAlert(t.success, `${lang.native} ${language === 'ur' ? 'فعال' : 'activated'}`);
+                    } else {
+                      showAlert(t.language, `${lang.name} ${language === 'ur' ? 'جلد دستیاب - Custom Language استعمال کریں' : 'coming soon - Use Custom Language feature'}`);
+                    }
                   }}
                 >
                   <Text style={[styles.langCardNative, isSelected && styles.langCardNativeActive]}>

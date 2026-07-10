@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { APP_CONFIG, i18n, URDU_NUMERALS, URDU_MONTHS } from '../constants/config';
+import { APP_CONFIG, i18n, URDU_NUMERALS, URDU_MONTHS, getTranslations, isRTLLanguage, isSupportedLanguage } from '../constants/config';
 import { Customer, Transaction, ItemRate, AppSettings, PaymentMethodConfig, ScanHistoryItem, mockCustomers, mockTransactions, mockItemRates, mockSettings, defaultPaymentMethods } from '../services/mockData';
 
-export type Language = 'en' | 'ur';
+export type Language = 'en' | 'ur' | 'hi' | 'pa' | 'sd' | 'ps' | 'ar' | 'fa';
 export type ThemeColorKey = 'green' | 'gold' | 'blue' | 'black' | 'desert';
 export type FontSize = 'small' | 'medium' | 'large';
 
@@ -52,7 +52,7 @@ interface AppContextType {
   addItemRate: (item: Omit<ItemRate, 'id'>) => void;
   updateItemRate: (id: string, updates: Partial<ItemRate>) => void;
   deleteItemRate: (id: string) => void;
-  ensureItemRate: (name: string, rate: number, unit?: string, category?: string) => void;
+  ensureItemRate: (name: string, rate: number, unit?: string, category?: string, image?: string) => void;
 
   setThemeColor: (k: ThemeColorKey) => void;
   setDarkMode: (v: boolean) => void;
@@ -79,8 +79,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [urduNumbers, setUrduNumbersState] = useState<boolean>(false);
   const [customLanguages, setCustomLanguages] = useState<CustomLanguage[]>([]);
 
-  const t = i18n[language];
-  const isRTL = language === 'ur';
+  const t = getTranslations(language);
+  const isRTL = isRTLLanguage(language);
 
   useEffect(() => {
     loadData();
@@ -116,7 +116,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (storedCustomers) setCustomers(JSON.parse(storedCustomers));
       if (storedTransactions) setTransactions(JSON.parse(storedTransactions));
       if (storedSettings) setSettings(JSON.parse(storedSettings));
-      if (storedLang === 'en' || storedLang === 'ur') setLanguageState(storedLang);
+      if (storedLang && isSupportedLanguage(storedLang)) setLanguageState(storedLang as Language);
       if (storedPaymentMethods) setPaymentMethods(JSON.parse(storedPaymentMethods));
       if (storedScanHistory) setScanHistory(JSON.parse(storedScanHistory));
       if (storedItemRates) setItemRates(JSON.parse(storedItemRates));
@@ -287,12 +287,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setItemRates(prev => prev.filter(r => r.id !== id));
   };
 
-  const ensureItemRate = (name: string, rate: number, unit: string = 'piece', category: string = 'Other') => {
+  const ensureItemRate = (name: string, rate: number, unit: string = 'piece', category: string = 'Other', image?: string) => {
     const trimmed = name.trim();
     if (!trimmed) return;
     const exists = itemRates.some(r => r.name.toLowerCase() === trimmed.toLowerCase());
     if (!exists) {
-      addItemRate({ name: trimmed, rate, unit, category });
+      addItemRate({ name: trimmed, rate, unit, category, image });
     }
   };
 
