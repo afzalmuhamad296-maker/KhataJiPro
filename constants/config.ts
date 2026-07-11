@@ -254,6 +254,33 @@ export const i18n = {
     // AI / Assistant
     chatAssistant: 'AI Assistant',
     insights: 'Business Insights',
+    voiceCommand: 'Voice Command',
+    tapToSpeak: 'Tap mic to speak',
+    
+    // Reports Extended
+    reportsSubtitle: 'Business analytics overview',
+    weekOverview: '7-Day Overview',
+    quickStats: 'Quick Stats',
+    avgCredit: 'Avg Credit',
+    collected: 'Collected',
+    txnsShort: 'txns',
+    exportReport: 'Export Report',
+    shareWhatsapp: 'Share',
+    downloadPdf: 'PDF',
+    downloadExcel: 'Excel',
+    performance: 'Performance',
+    collectionRate: 'Collection Rate',
+    growth: 'Growth',
+    trend: 'Trend',
+    
+    // Bulk Add
+    singleMode: 'Single',
+    bulkMode: 'Bulk Paste',
+    bulkPasteHint: 'Paste items as: Name, Rate, Qty, Unit (one per line)',
+    bulkExample: 'Example:\nAtta 10kg, 1200, 1, bag\nCheeni 1kg, 220, 2, kg\nDoodh, 210, 1, litre',
+    parseItems: 'Parse Items',
+    addAll: 'Add All',
+    itemsParsed: 'items parsed',
     
     // Actions
     call: 'Call',
@@ -512,6 +539,33 @@ export const i18n = {
     // AI
     chatAssistant: 'اے آئی اسسٹنٹ',
     insights: 'بصیرت',
+    voiceCommand: 'وائس کمانڈ',
+    tapToSpeak: 'بولنے کے لیے مائیک دبائیں',
+    
+    // Reports Extended
+    reportsSubtitle: 'کاروباری تجزیہ اور جائزہ',
+    weekOverview: '7 دن کا جائزہ',
+    quickStats: 'فوری اعدادوشمار',
+    avgCredit: 'اوسط ادھار',
+    collected: 'وصول شدہ',
+    txnsShort: 'لین دین',
+    exportReport: 'رپورٹ برآمد',
+    shareWhatsapp: 'شیئر',
+    downloadPdf: 'پی ڈی ایف',
+    downloadExcel: 'ایکسل',
+    performance: 'کارکردگی',
+    collectionRate: 'وصولی کی شرح',
+    growth: 'ترقی',
+    trend: 'رجحان',
+    
+    // Bulk Add
+    singleMode: 'واحد',
+    bulkMode: 'اجتماعی',
+    bulkPasteHint: 'اشیاء لکھیں: نام، ریٹ، مقدار، یونٹ (فی لائن)',
+    bulkExample: 'مثال:\nآٹا 10 کلو، 1200، 1، بوری\nچینی 1 کلو، 220، 2، کلو\nدودھ، 210، 1، لیٹر',
+    parseItems: 'اشیاء نکالیں',
+    addAll: 'سب شامل کریں',
+    itemsParsed: 'اشیاء ملیں',
     
     // Actions
     call: 'کال کریں',

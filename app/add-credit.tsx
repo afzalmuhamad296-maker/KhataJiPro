@@ -48,6 +48,13 @@ export default function AddCreditScreen() {
   const [ciSaveToBook, setCiSaveToBook] = useState(true);
   const [ciCategory, setCiCategory] = useState('Other');
 
+  // Bulk mode
+  const [ciMode, setCiMode] = useState<'single' | 'bulk'>('single');
+  const [bulkText, setBulkText] = useState('');
+  const [bulkItems, setBulkItems] = useState<Array<{
+    id: string; name: string; rate: number; qty: number; unit: string; image?: string;
+  }>>([]);
+
   const customer = customers.find(c => c.id === selectedCustomer);
 
   const filteredCustomers = useMemo(() =>
@@ -100,6 +107,74 @@ export default function AddCreditScreen() {
     setCiName(''); setCiRate(''); setCiQty('1'); setCiUnit('kg');
     setCiEmoji('📦'); setCiImage(undefined); setCiCategory('Other');
     setCiSaveToBook(true);
+    setBulkText(''); setBulkItems([]); setCiMode('single');
+  };
+
+  const parseBulkText = () => {
+    const lines = bulkText.split('\n').map(l => l.trim()).filter(l => l);
+    const parsed = lines.map((line, idx) => {
+      const parts = line.split(',').map(p => p.trim());
+      const name = parts[0] || '';
+      const rate = parseFloat(parts[1]) || 0;
+      const qty = parseFloat(parts[2]) || 1;
+      const unit = parts[3] || 'piece';
+      return {
+        id: 'bulk_' + Date.now() + '_' + idx,
+        name, rate, qty, unit,
+        image: undefined as string | undefined,
+      };
+    }).filter(it => it.name && it.rate > 0);
+    if (parsed.length === 0) {
+      showAlert(t.error, language === 'ur' ? 'کوئی صحیح شئ نہیں ملی۔ فارمیٹ چیک کریں' : 'No valid items found. Check format.');
+      return;
+    }
+    setBulkItems(parsed);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  };
+
+  const pickBulkItemImage = async (itemId: string, source: 'camera' | 'gallery') => {
+    try {
+      const perm = source === 'camera'
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) return;
+      const result = source === 'camera'
+        ? await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.6 })
+        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.6 });
+      if (!result.canceled && result.assets?.[0]) {
+        setBulkItems(prev => prev.map(it =>
+          it.id === itemId ? { ...it, image: result.assets[0].uri } : it
+        ));
+      }
+    } catch {}
+  };
+
+  const removeBulkItem = (id: string) => {
+    setBulkItems(prev => prev.filter(it => it.id !== id));
+  };
+
+  const handleAddAllBulk = () => {
+    if (bulkItems.length === 0) {
+      showAlert(t.error, language === 'ur' ? 'پہلے اشیاء پارس کریں' : 'Parse items first');
+      return;
+    }
+    const newItems = bulkItems.map(it => ({
+      id: it.id, name: it.name, quantity: it.qty, rate: it.rate,
+      total: it.qty * it.rate, image: it.image,
+    }));
+    setSelectedItems(prev => [...prev, ...newItems]);
+    if (ciSaveToBook) {
+      bulkItems.forEach(it => {
+        addItemRate({ name: it.name, rate: it.rate, unit: it.unit, category: ciCategory, image: it.image });
+      });
+    }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    showAlert(
+      language === 'ur' ? 'کامیاب' : 'Success',
+      `${bulkItems.length} ${language === 'ur' ? 'اشیاء شامل ہو گئیں' : 'items added successfully'}`
+    );
+    resetCustomItemForm();
+    setShowCustomItemModal(false);
   };
 
   const handleAddCustomItem = () => {
@@ -510,6 +585,124 @@ export default function AddCreditScreen() {
                 <MaterialIcons name="close" size={22} color="#FFF" />
               </Pressable>
             </LinearGradient>
+
+            {/* Mode Toggle */}
+            <View style={s.ciModeToggle}>
+              <Pressable
+                style={[s.ciModeBtn, ciMode === 'single' && s.ciModeBtnActive]}
+                onPress={() => setCiMode('single')}
+              >
+                <MaterialIcons name="add-circle-outline" size={14} color={ciMode === 'single' ? theme.credit : theme.textMuted} />
+                <Text style={[s.ciModeText, ciMode === 'single' && { color: theme.credit }]}>{t.singleMode}</Text>
+              </Pressable>
+              <Pressable
+                style={[s.ciModeBtn, ciMode === 'bulk' && s.ciModeBtnActive]}
+                onPress={() => setCiMode('bulk')}
+              >
+                <MaterialIcons name="content-paste" size={14} color={ciMode === 'bulk' ? theme.credit : theme.textMuted} />
+                <Text style={[s.ciModeText, ciMode === 'bulk' && { color: theme.credit }]}>{t.bulkMode}</Text>
+              </Pressable>
+            </View>
+
+            {ciMode === 'bulk' ? (
+              <ScrollView style={{ maxHeight: 500 }} contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
+                <View style={s.bulkHintBox}>
+                  <MaterialIcons name="info-outline" size={14} color={theme.info} />
+                  <Text style={[s.bulkHint, isRTL && s.rtlText]}>{t.bulkPasteHint}</Text>
+                </View>
+
+                <TextInput
+                  style={[s.bulkTextArea, isRTL && s.rtlText]}
+                  placeholder={t.bulkExample}
+                  value={bulkText}
+                  onChangeText={setBulkText}
+                  multiline
+                  numberOfLines={8}
+                  placeholderTextColor={theme.textMuted}
+                  textAlignVertical="top"
+                />
+
+                <Pressable
+                  style={({ pressed }) => [s.parseBtn, pressed && { opacity: 0.85 }]}
+                  onPress={parseBulkText}
+                >
+                  <MaterialIcons name="auto-fix-high" size={16} color="#FFF" />
+                  <Text style={s.parseBtnText}>{t.parseItems}</Text>
+                </Pressable>
+
+                {bulkItems.length > 0 && (
+                  <>
+                    <View style={[s.bulkResultHead, isRTL && s.rtlRow]}>
+                      <MaterialIcons name="check-circle" size={16} color={theme.payment} />
+                      <Text style={s.bulkResultText}>
+                        {bulkItems.length} {t.itemsParsed}
+                      </Text>
+                    </View>
+
+                    {bulkItems.map((item) => (
+                      <View key={item.id} style={[s.bulkItemRow, isRTL && s.rtlRow]}>
+                        <Pressable
+                          style={s.bulkItemImg}
+                          onPress={() => pickBulkItemImage(item.id, 'gallery')}
+                        >
+                          {item.image ? (
+                            <Image source={{ uri: item.image }} style={s.bulkItemImgPic} contentFit="cover" transition={150} />
+                          ) : (
+                            <MaterialIcons name="add-a-photo" size={16} color={theme.primary} />
+                          )}
+                        </Pressable>
+                        <View style={{ flex: 1, marginHorizontal: 10 }}>
+                          <Text style={[s.bulkItemName, isRTL && s.rtlText]} numberOfLines={1}>{item.name}</Text>
+                          <Text style={[s.bulkItemMeta, isRTL && s.rtlText]}>
+                            {formatCurrency(item.rate)} × {item.qty} {item.unit} = {formatCurrency(item.rate * item.qty)}
+                          </Text>
+                        </View>
+                        <View style={s.bulkItemActions}>
+                          <Pressable
+                            style={s.bulkCamBtn}
+                            onPress={() => pickBulkItemImage(item.id, 'camera')}
+                            hitSlop={4}
+                          >
+                            <MaterialIcons name="camera-alt" size={14} color={theme.primary} />
+                          </Pressable>
+                          <Pressable
+                            style={s.bulkDelBtn}
+                            onPress={() => removeBulkItem(item.id)}
+                            hitSlop={4}
+                          >
+                            <MaterialIcons name="close" size={14} color={theme.credit} />
+                          </Pressable>
+                        </View>
+                      </View>
+                    ))}
+
+                    <View style={s.bulkTotalRow}>
+                      <Text style={s.bulkTotalLabel}>{t.total}</Text>
+                      <Text style={s.bulkTotalValue}>
+                        {formatCurrency(bulkItems.reduce((sum, it) => sum + (it.rate * it.qty), 0))}
+                      </Text>
+                    </View>
+
+                    <View style={[s.ciSaveRow, isRTL && s.rtlRow]}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[s.ciSaveLabel, isRTL && s.rtlText]}>
+                          💾 {language === 'ur' ? 'ریٹ بک میں محفوظ کریں' : 'Save to Rate Book'}
+                        </Text>
+                        <Text style={[s.ciSaveSub, isRTL && s.rtlText]}>
+                          {language === 'ur' ? 'اگلی بار خودکار' : 'Available for future use'}
+                        </Text>
+                      </View>
+                      <Switch
+                        value={ciSaveToBook}
+                        onValueChange={setCiSaveToBook}
+                        trackColor={{ false: '#E2E8F0', true: '#86EFAC' }}
+                        thumbColor={ciSaveToBook ? theme.payment : '#94A3B8'}
+                      />
+                    </View>
+                  </>
+                )}
+              </ScrollView>
+            ) : (
             <ScrollView style={{ maxHeight: 500 }} contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
               <View style={s.ciPhotoWrap}>
                 <View style={s.ciPhoto}>
@@ -638,6 +831,7 @@ export default function AddCreditScreen() {
                 />
               </View>
             </ScrollView>
+            )}
 
             <View style={s.ciActions}>
               <Pressable
@@ -648,11 +842,11 @@ export default function AddCreditScreen() {
               </Pressable>
               <Pressable
                 style={({ pressed }) => [s.ciAddBtn, pressed && { opacity: 0.9 }]}
-                onPress={handleAddCustomItem}
+                onPress={ciMode === 'bulk' ? handleAddAllBulk : handleAddCustomItem}
               >
                 <LinearGradient colors={['#DC2626', '#B91C1C']} style={s.ciAddGrad}>
-                  <MaterialIcons name="add" size={18} color="#FFF" />
-                  <Text style={s.ciAddText}>{t.add}</Text>
+                  <MaterialIcons name={ciMode === 'bulk' ? 'playlist-add' : 'add'} size={18} color="#FFF" />
+                  <Text style={s.ciAddText}>{ciMode === 'bulk' ? `${t.addAll} (${bulkItems.length})` : t.add}</Text>
                 </LinearGradient>
               </Pressable>
             </View>
@@ -786,4 +980,28 @@ const s = StyleSheet.create({
   ciAddBtn: { flex: 1.5, borderRadius: 12, overflow: 'hidden' },
   ciAddGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14 },
   ciAddText: { fontSize: 14, fontWeight: '800', color: '#FFF' },
+
+  // Bulk mode
+  ciModeToggle: { flexDirection: 'row', gap: 4, marginHorizontal: 20, marginTop: 12, backgroundColor: theme.background, borderRadius: 12, padding: 4 },
+  ciModeBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 9 },
+  ciModeBtnActive: { backgroundColor: '#FFF' },
+  ciModeText: { fontSize: 12, fontWeight: '700', color: theme.textMuted },
+  bulkHintBox: { flexDirection: 'row', alignItems: 'center', gap: 6, padding: 10, backgroundColor: '#EFF6FF', borderRadius: 10, marginBottom: 10, borderWidth: 1, borderColor: '#BFDBFE' },
+  bulkHint: { flex: 1, fontSize: 11, color: '#1E40AF', fontWeight: '600' },
+  bulkTextArea: { backgroundColor: theme.background, borderRadius: 12, padding: 14, fontSize: 13, color: theme.textDark, borderWidth: 1.5, borderColor: theme.borderLight, minHeight: 120, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+  parseBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12, paddingVertical: 12, borderRadius: 12, backgroundColor: theme.primary },
+  parseBtnText: { fontSize: 13, fontWeight: '800', color: '#FFF' },
+  bulkResultHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 18, marginBottom: 10 },
+  bulkResultText: { fontSize: 12, fontWeight: '800', color: theme.payment, textTransform: 'uppercase', letterSpacing: 0.5 },
+  bulkItemRow: { flexDirection: 'row', alignItems: 'center', padding: 10, backgroundColor: theme.background, borderRadius: 12, marginBottom: 8, borderWidth: 1, borderColor: theme.borderLight },
+  bulkItemImg: { width: 42, height: 42, borderRadius: 12, backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: theme.primary + '30', borderStyle: 'dashed' },
+  bulkItemImgPic: { width: 42, height: 42, borderRadius: 12 },
+  bulkItemName: { fontSize: 13, fontWeight: '700', color: theme.textDark },
+  bulkItemMeta: { fontSize: 11, color: theme.textMuted, marginTop: 2 },
+  bulkItemActions: { flexDirection: 'row', gap: 6 },
+  bulkCamBtn: { width: 28, height: 28, borderRadius: 8, backgroundColor: theme.primary + '15', alignItems: 'center', justifyContent: 'center' },
+  bulkDelBtn: { width: 28, height: 28, borderRadius: 8, backgroundColor: theme.creditLight, alignItems: 'center', justifyContent: 'center' },
+  bulkTotalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, padding: 14, backgroundColor: theme.creditLight, borderRadius: 12 },
+  bulkTotalLabel: { fontSize: 13, fontWeight: '700', color: theme.credit, textTransform: 'uppercase', letterSpacing: 0.5 },
+  bulkTotalValue: { fontSize: 18, fontWeight: '800', color: theme.credit },
 });

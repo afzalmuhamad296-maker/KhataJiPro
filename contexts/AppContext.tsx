@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { APP_CONFIG, i18n, URDU_NUMERALS, URDU_MONTHS, getTranslations, isRTLLanguage, isSupportedLanguage } from '../constants/config';
+import { getTheme, AppTheme } from '../constants/theme';
 import { Customer, Transaction, ItemRate, AppSettings, PaymentMethodConfig, ScanHistoryItem, mockCustomers, mockTransactions, mockItemRates, mockSettings, defaultPaymentMethods } from '../services/mockData';
 
 export type Language = 'en' | 'ur' | 'hi' | 'pa' | 'sd' | 'ps' | 'ar' | 'fa';
@@ -32,6 +33,7 @@ interface AppContextType {
   fontSize: FontSize;
   urduNumbers: boolean;
   customLanguages: CustomLanguage[];
+  currentTheme: AppTheme;
 
   addCustomer: (customer: Omit<Customer, 'id' | 'balance' | 'totalCredit' | 'totalDebit' | 'createdAt'>) => void;
   deleteCustomer: (id: string) => void;
@@ -81,6 +83,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const t = getTranslations(language);
   const isRTL = isRTLLanguage(language);
+  const currentTheme = useMemo(() => getTheme(themeColor, darkMode), [themeColor, darkMode]);
 
   useEffect(() => {
     loadData();
@@ -307,6 +310,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     customers, transactions, itemRates, settings, language, t, isRTL,
     paymentMethods, scanHistory,
     themeColor, darkMode, fontSize, urduNumbers, customLanguages,
+    currentTheme,
     addCustomer, deleteCustomer, addTransaction, deleteTransaction,
     updateSettings, setLanguage, getCustomerById, getCustomerTransactions,
     getTodayStats, formatCurrency, formatNumber, formatDate,
@@ -314,7 +318,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     addItemRate, updateItemRate, deleteItemRate, ensureItemRate,
     setThemeColor, setDarkMode, setFontSize, setUrduNumbers,
     addCustomLanguage, removeCustomLanguage,
-  }), [customers, transactions, itemRates, settings, language, paymentMethods, scanHistory, themeColor, darkMode, fontSize, urduNumbers, customLanguages]);
+  }), [customers, transactions, itemRates, settings, language, paymentMethods, scanHistory, themeColor, darkMode, fontSize, urduNumbers, customLanguages, currentTheme]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

@@ -1,442 +1,537 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet, Platform } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { theme } from '../../constants/theme';
 import { useApp } from '../../contexts/AppContext';
+import { useAlert } from '@/template';
 
 export default function ReportsScreen() {
   const insets = useSafeAreaInsets();
-  const { customers, transactions, t, formatCurrency } = useApp();
+  const { customers, transactions, t, formatCurrency, language, isRTL, currentTheme, settings } = useApp();
+  const { showAlert } = useAlert();
   const [period, setPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
 
   const today = new Date().toISOString().split('T')[0];
   const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
   const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
 
-  const getFilteredTransactions = () => {
-    let startDate = today;
-    if (period === 'weekly') startDate = weekAgo;
-    if (period === 'monthly') startDate = monthAgo;
-    return transactions.filter(txn => txn.date >= startDate);
-  };
+  const filtered = useMemo(() => {
+    const start = period === 'daily' ? today : period === 'weekly' ? weekAgo : monthAgo;
+    return transactions.filter(txn => txn.date >= start);
+  }, [transactions, period]);
 
-  const filtered = getFilteredTransactions();
-  const totalCredit = filtered.filter(t => t.type === 'credit').reduce((sum, t) => sum + t.amount, 0);
-  const totalPayments = filtered.filter(t => t.type === 'debit').reduce((sum, t) => sum + t.amount, 0);
-  const outstanding = customers.reduce((sum, c) => sum + c.balance, 0);
-  const creditCount = filtered.filter(t => t.type === 'credit').length;
-  const paymentCount = filtered.filter(t => t.type === 'debit').length;
+  const totalCredit = filtered.filter(x => x.type === 'credit').reduce((s, x) => s + x.amount, 0);
+  const totalPayments = filtered.filter(x => x.type === 'debit').reduce((s, x) => s + x.amount, 0);
+  const outstanding = customers.reduce((s, c) => s + c.balance, 0);
+  const creditCount = filtered.filter(x => x.type === 'credit').length;
+  const paymentCount = filtered.filter(x => x.type === 'debit').length;
+  const collectionRate = totalCredit > 0 ? Math.round((totalPayments / totalCredit) * 100) : 0;
 
-  const topDebtors = [...customers].filter(c => c.balance > 0).sort((a, b) => b.balance - a.balance).slice(0, 5);
+  const topDebtors = useMemo(
+    () => [...customers].filter(c => c.balance > 0).sort((a, b) => b.balance - a.balance).slice(0, 5),
+    [customers]
+  );
 
-  const dailyBreakdown = Array.from({ length: 7 }, (_, i) => {
-    const date = new Date(Date.now() - i * 86400000).toISOString().split('T')[0];
-    const dayTxns = transactions.filter(t => t.date === date);
-    const credit = dayTxns.filter(t => t.type === 'credit').reduce((sum, t) => sum + t.amount, 0);
-    const debit = dayTxns.filter(t => t.type === 'debit').reduce((sum, t) => sum + t.amount, 0);
-    return { date, credit, debit, day: new Date(date).toLocaleDateString('en-PK', { weekday: 'short' }) };
-  }).reverse();
+  const dailyBreakdown = useMemo(() => {
+    return Array.from({ length: 7 }, (_, i) => {
+      const date = new Date(Date.now() - i * 86400000).toISOString().split('T')[0];
+      const dayTxns = transactions.filter(x => x.date === date);
+      const credit = dayTxns.filter(x => x.type === 'credit').reduce((s, x) => s + x.amount, 0);
+      const debit = dayTxns.filter(x => x.type === 'debit').reduce((s, x) => s + x.amount, 0);
+      const d = new Date(date);
+      const dayNames = language === 'ur'
+        ? ['اتوار', 'پیر', 'منگل', 'بدھ', 'جمعرات', 'جمعہ', 'ہفتہ']
+        : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      return { date, credit, debit, day: dayNames[d.getDay()] };
+    }).reverse();
+  }, [transactions, language]);
 
   const maxDailyAmount = Math.max(...dailyBreakdown.map(d => Math.max(d.credit, d.debit)), 1);
 
+  const handleExport = (type: string) => {
+    showAlert(
+      t.exportReport,
+      language === 'ur' ? `${type} فائل تیار ہو رہی ہے...` : `${type} report is being generated...`
+    );
+  };
+
+  const periodOptions = [
+    { key: 'daily' as const, label: t.today, icon: 'today' },
+    { key: 'weekly' as const, label: t.thisWeek, icon: 'date-range' },
+    { key: 'monthly' as const, label: t.thisMonth, icon: 'calendar-month' },
+  ];
+
   return (
-    <SafeAreaView edges={['top']} style={styles.container}>
+    <SafeAreaView edges={['top']} style={[s.container, { backgroundColor: currentTheme.background }]}>
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 90 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>{t.reports}</Text>
-          <Text style={styles.subtitle}>Business analytics overview</Text>
-        </View>
-
-        {/* Period Selector */}
-        <View style={styles.periodRow}>
-          {([
-            { key: 'daily', label: t.today, icon: 'today' },
-            { key: 'weekly', label: t.thisWeek, icon: 'date-range' },
-            { key: 'monthly', label: t.thisMonth, icon: 'calendar-month' },
-          ] as const).map(item => (
-            <Pressable
-              key={item.key}
-              style={[styles.periodChip, period === item.key && styles.periodChipActive]}
-              onPress={() => setPeriod(item.key)}
-            >
-              <MaterialIcons name={item.icon as any} size={14} color={period === item.key ? '#FFF' : theme.textMuted} />
-              <Text style={[styles.periodText, period === item.key && styles.periodTextActive]}>
-                {item.label}
-              </Text>
+        {/* Gradient Header - Theme aware */}
+        <LinearGradient
+          colors={currentTheme.primaryGradient as any}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={s.header}
+        >
+          <View style={[s.headerTop, isRTL && s.rtlRow]}>
+            <View style={isRTL && { alignItems: 'flex-end' }}>
+              <Text style={s.headerTitle}>📊 {t.reports}</Text>
+              <Text style={s.headerSub}>{t.reportsSubtitle}</Text>
+            </View>
+            <Pressable style={s.exportBtn} onPress={() => handleExport('PDF')} hitSlop={6}>
+              <MaterialIcons name="ios-share" size={18} color="#FFF" />
             </Pressable>
-          ))}
-        </View>
-
-        {/* Summary Cards */}
-        <View style={styles.summaryGrid}>
-          <View style={styles.summaryCard}>
-            <LinearGradient colors={['#FEE2E2', '#FECACA']} style={styles.summaryCardIcon}>
-              <MaterialIcons name="trending-up" size={20} color={theme.credit} />
-            </LinearGradient>
-            <Text style={styles.summaryLabel}>Credit Given</Text>
-            <Text style={[styles.summaryValue, { color: theme.credit }]}>{formatCurrency(totalCredit)}</Text>
-            <Text style={styles.summaryCount}>{creditCount} txns</Text>
           </View>
-          <View style={styles.summaryCard}>
-            <LinearGradient colors={['#DCFCE7', '#BBF7D0']} style={styles.summaryCardIcon}>
-              <MaterialIcons name="trending-down" size={20} color={theme.payment} />
-            </LinearGradient>
-            <Text style={styles.summaryLabel}>Collected</Text>
-            <Text style={[styles.summaryValue, { color: theme.payment }]}>{formatCurrency(totalPayments)}</Text>
-            <Text style={styles.summaryCount}>{paymentCount} txns</Text>
-          </View>
-        </View>
 
-        {/* Outstanding Card */}
-        <View style={styles.outstandingCard}>
-          <LinearGradient
-            colors={['#FFFBEB', '#FEF3C7']}
-            style={styles.outstandingGradient}
-          >
-            <View style={styles.outstandingLeft}>
-              <Text style={styles.outstandingLabel}>Total Outstanding</Text>
-              <Text style={styles.outstandingValue}>{formatCurrency(outstanding)}</Text>
-            </View>
-            <View style={styles.outstandingRight}>
-              <View style={styles.outstandingIconWrap}>
-                <MaterialIcons name="account-balance-wallet" size={22} color="#D97706" />
+          {/* Period Selector inside header */}
+          <View style={s.periodBar}>
+            {periodOptions.map(opt => {
+              const active = period === opt.key;
+              return (
+                <Pressable
+                  key={opt.key}
+                  style={[s.periodChip, active && s.periodChipActive]}
+                  onPress={() => setPeriod(opt.key)}
+                >
+                  <MaterialIcons
+                    name={opt.icon as any}
+                    size={13}
+                    color={active ? currentTheme.primary : 'rgba(255,255,255,0.7)'}
+                  />
+                  <Text
+                    style={[
+                      s.periodChipText,
+                      active && { color: currentTheme.primary },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {/* Hero KPI */}
+          <View style={s.hero}>
+            <View style={s.heroLeft}>
+              <Text style={s.heroLabel}>{t.totalOutstanding}</Text>
+              <Text style={s.heroValue}>{formatCurrency(outstanding)}</Text>
+              <View style={[s.heroPerf, isRTL && s.rtlRow]}>
+                <MaterialIcons
+                  name={collectionRate >= 50 ? 'trending-up' : 'trending-down'}
+                  size={14}
+                  color={collectionRate >= 50 ? '#86EFAC' : '#FCA5A5'}
+                />
+                <Text style={[s.heroPerfText, { color: collectionRate >= 50 ? '#86EFAC' : '#FCA5A5' }]}>
+                  {t.collectionRate}: {collectionRate}%
+                </Text>
               </View>
-              <Text style={styles.outstandingCustomers}>{topDebtors.length} customers</Text>
             </View>
-          </LinearGradient>
+            <View style={s.heroCircle}>
+              <Text style={s.heroCircleText}>{collectionRate}%</Text>
+              <Text style={s.heroCircleSub}>{language === 'ur' ? 'وصولی' : 'Rate'}</Text>
+            </View>
+          </View>
+        </LinearGradient>
+
+        {/* Floating Summary Cards */}
+        <View style={[s.summaryFloat, isRTL && s.rtlRow]}>
+          <View style={s.summaryCard}>
+            <LinearGradient colors={['#FEE2E2', '#FECACA']} style={s.summaryIcon}>
+              <MaterialIcons name="north-east" size={18} color={currentTheme.credit} />
+            </LinearGradient>
+            <Text style={[s.summaryLabel, isRTL && s.rtlText]}>{t.creditGiven}</Text>
+            <Text style={[s.summaryValue, { color: currentTheme.credit }]}>{formatCurrency(totalCredit)}</Text>
+            <View style={s.summaryFooter}>
+              <View style={[s.summaryDot, { backgroundColor: currentTheme.credit }]} />
+              <Text style={s.summaryCount}>{creditCount} {t.txnsShort}</Text>
+            </View>
+          </View>
+          <View style={s.summaryCard}>
+            <LinearGradient colors={['#DCFCE7', '#BBF7D0']} style={s.summaryIcon}>
+              <MaterialIcons name="south-west" size={18} color={currentTheme.payment} />
+            </LinearGradient>
+            <Text style={[s.summaryLabel, isRTL && s.rtlText]}>{t.collected}</Text>
+            <Text style={[s.summaryValue, { color: currentTheme.payment }]}>{formatCurrency(totalPayments)}</Text>
+            <View style={s.summaryFooter}>
+              <View style={[s.summaryDot, { backgroundColor: currentTheme.payment }]} />
+              <Text style={s.summaryCount}>{paymentCount} {t.txnsShort}</Text>
+            </View>
+          </View>
         </View>
 
-        {/* Daily Chart */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>7-Day Overview</Text>
-          <View style={styles.chartCard}>
-            <View style={styles.chartContainer}>
+        {/* Chart Card */}
+        <View style={s.section}>
+          <View style={[s.sectionHead, isRTL && s.rtlRow]}>
+            <View style={[s.sectionTitleRow, isRTL && s.rtlRow]}>
+              <View style={[s.sectionIcon, { backgroundColor: currentTheme.primary + '15' }]}>
+                <MaterialIcons name="show-chart" size={16} color={currentTheme.primary} />
+              </View>
+              <Text style={[s.sectionTitle, isRTL && s.rtlText]}>{t.weekOverview}</Text>
+            </View>
+          </View>
+          <View style={s.chartCard}>
+            <View style={s.chartInner}>
               {dailyBreakdown.map((day, index) => (
-                <View key={index} style={styles.chartCol}>
-                  <View style={styles.barsWrapper}>
-                    <View
+                <View key={index} style={s.chartCol}>
+                  <View style={s.barsWrap}>
+                    <LinearGradient
+                      colors={[currentTheme.credit, '#F87171']}
                       style={[
-                        styles.bar,
-                        styles.creditBar,
-                        { height: Math.max((day.credit / maxDailyAmount) * 90, 4) },
+                        s.bar,
+                        { height: Math.max((day.credit / maxDailyAmount) * 96, 4) },
                       ]}
                     />
-                    <View
+                    <LinearGradient
+                      colors={[currentTheme.payment, '#4ADE80']}
                       style={[
-                        styles.bar,
-                        styles.debitBar,
-                        { height: Math.max((day.debit / maxDailyAmount) * 90, 4) },
+                        s.bar,
+                        { height: Math.max((day.debit / maxDailyAmount) * 96, 4) },
                       ]}
                     />
                   </View>
-                  <Text style={styles.chartLabel}>{day.day}</Text>
+                  <Text style={s.chartLabel}>{day.day}</Text>
                 </View>
               ))}
             </View>
-            <View style={styles.legendRow}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: theme.credit }]} />
-                <Text style={styles.legendText}>Credit</Text>
+            <View style={s.legendRow}>
+              <View style={[s.legendItem, isRTL && s.rtlRow]}>
+                <View style={[s.legendDot, { backgroundColor: currentTheme.credit }]} />
+                <Text style={s.legendText}>{t.credit}</Text>
               </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: theme.payment }]} />
-                <Text style={styles.legendText}>Payment</Text>
+              <View style={[s.legendItem, isRTL && s.rtlRow]}>
+                <View style={[s.legendDot, { backgroundColor: currentTheme.payment }]} />
+                <Text style={s.legendText}>{t.debit}</Text>
               </View>
             </View>
           </View>
         </View>
 
         {/* Top Debtors */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Top Outstanding</Text>
-          <View style={styles.debtorsList}>
-            {topDebtors.map((customer, index) => (
-              <View key={customer.id} style={styles.debtorRow}>
-                <View style={[styles.rankBadge, index === 0 && { backgroundColor: '#FEF3C7' }]}>
-                  <Text style={[styles.rankText, index === 0 && { color: '#D97706' }]}>#{index + 1}</Text>
-                </View>
-                <View style={styles.debtorInfo}>
-                  <Text style={styles.debtorName}>{customer.name}</Text>
-                  <View style={styles.debtorBar}>
-                    <LinearGradient
-                      colors={[theme.credit, '#F87171']}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={[
-                        styles.debtorBarFill,
-                        { width: `${(customer.balance / (topDebtors[0]?.balance || 1)) * 100}%` },
-                      ]}
-                    />
-                  </View>
-                </View>
-                <Text style={styles.debtorAmount}>{formatCurrency(customer.balance)}</Text>
+        <View style={s.section}>
+          <View style={[s.sectionHead, isRTL && s.rtlRow]}>
+            <View style={[s.sectionTitleRow, isRTL && s.rtlRow]}>
+              <View style={[s.sectionIcon, { backgroundColor: currentTheme.credit + '15' }]}>
+                <MaterialIcons name="warning-amber" size={16} color={currentTheme.credit} />
               </View>
-            ))}
+              <Text style={[s.sectionTitle, isRTL && s.rtlText]}>{t.topOutstanding}</Text>
+            </View>
+            <View style={[s.sectionBadge, { backgroundColor: currentTheme.credit + '15' }]}>
+              <Text style={[s.sectionBadgeText, { color: currentTheme.credit }]}>
+                {topDebtors.length}
+              </Text>
+            </View>
+          </View>
+          <View style={s.debtorsCard}>
+            {topDebtors.length === 0 ? (
+              <View style={s.emptyBox}>
+                <Text style={{ fontSize: 40 }}>🎉</Text>
+                <Text style={s.emptyText}>
+                  {language === 'ur' ? 'کوئی بقایا نہیں!' : 'All clear!'}
+                </Text>
+              </View>
+            ) : (
+              topDebtors.map((customer, index) => {
+                const pct = (customer.balance / (topDebtors[0]?.balance || 1)) * 100;
+                const isTop = index === 0;
+                return (
+                  <View key={customer.id} style={[s.debtorRow, isRTL && s.rtlRow]}>
+                    <View
+                      style={[
+                        s.rankBadge,
+                        isTop && { backgroundColor: '#FEF3C7' },
+                        index === 1 && { backgroundColor: '#F3E8FF' },
+                        index === 2 && { backgroundColor: '#DBEAFE' },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          s.rankText,
+                          isTop && { color: '#D97706' },
+                          index === 1 && { color: '#7C3AED' },
+                          index === 2 && { color: '#2563EB' },
+                        ]}
+                      >
+                        {isTop ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1, marginHorizontal: 10 }}>
+                      <Text style={[s.debtorName, isRTL && s.rtlText]}>{customer.name}</Text>
+                      <View style={s.debtorBar}>
+                        <LinearGradient
+                          colors={[currentTheme.credit, '#F87171']}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 0 }}
+                          style={[s.debtorBarFill, { width: `${pct}%` }]}
+                        />
+                      </View>
+                    </View>
+                    <Text style={[s.debtorAmount, { color: currentTheme.credit }]}>
+                      {formatCurrency(customer.balance)}
+                    </Text>
+                  </View>
+                );
+              })
+            )}
           </View>
         </View>
 
         {/* Quick Stats */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Quick Stats</Text>
-          <View style={styles.statsGrid}>
-            <View style={styles.statItem}>
-              <LinearGradient colors={['#E8F5ED', '#D1FAE5']} style={styles.statIcon}>
-                <MaterialIcons name="people" size={20} color={theme.primary} />
-              </LinearGradient>
-              <Text style={styles.statItemValue}>{customers.length}</Text>
-              <Text style={styles.statItemLabel}>Customers</Text>
-            </View>
-            <View style={styles.statItem}>
-              <LinearGradient colors={['#DBEAFE', '#BFDBFE']} style={styles.statIcon}>
-                <MaterialIcons name="receipt" size={20} color="#2563EB" />
-              </LinearGradient>
-              <Text style={styles.statItemValue}>{transactions.length}</Text>
-              <Text style={styles.statItemLabel}>Transactions</Text>
-            </View>
-            <View style={styles.statItem}>
-              <LinearGradient colors={['#F3E8FF', '#E9D5FF']} style={styles.statIcon}>
-                <MaterialIcons name="calculate" size={20} color="#7C3AED" />
-              </LinearGradient>
-              <Text style={styles.statItemValue}>
-                {formatCurrency(Math.round(totalCredit / Math.max(creditCount, 1)))}
-              </Text>
-              <Text style={styles.statItemLabel}>Avg Credit</Text>
+        <View style={s.section}>
+          <View style={[s.sectionHead, isRTL && s.rtlRow]}>
+            <View style={[s.sectionTitleRow, isRTL && s.rtlRow]}>
+              <View style={[s.sectionIcon, { backgroundColor: currentTheme.info + '15' }]}>
+                <MaterialIcons name="analytics" size={16} color={currentTheme.info} />
+              </View>
+              <Text style={[s.sectionTitle, isRTL && s.rtlText]}>{t.quickStats}</Text>
             </View>
           </View>
+          <View style={s.statsGrid}>
+            <View style={s.statCard}>
+              <LinearGradient colors={[currentTheme.primary + '18', currentTheme.primary + '08']} style={s.statIconBg}>
+                <MaterialIcons name="people" size={22} color={currentTheme.primary} />
+              </LinearGradient>
+              <Text style={s.statValue}>{customers.length}</Text>
+              <Text style={s.statLabel}>{t.customers}</Text>
+            </View>
+            <View style={s.statCard}>
+              <LinearGradient colors={['#DBEAFE', '#EFF6FF']} style={s.statIconBg}>
+                <MaterialIcons name="receipt-long" size={22} color="#2563EB" />
+              </LinearGradient>
+              <Text style={s.statValue}>{transactions.length}</Text>
+              <Text style={s.statLabel}>{language === 'ur' ? 'لین دین' : 'Transactions'}</Text>
+            </View>
+            <View style={s.statCard}>
+              <LinearGradient colors={['#F3E8FF', '#FAF5FF']} style={s.statIconBg}>
+                <MaterialIcons name="calculate" size={22} color="#7C3AED" />
+              </LinearGradient>
+              <Text style={s.statValue}>
+                {formatCurrency(Math.round(totalCredit / Math.max(creditCount, 1)))}
+              </Text>
+              <Text style={s.statLabel}>{t.avgCredit}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Export Section */}
+        <View style={s.section}>
+          <View style={[s.sectionHead, isRTL && s.rtlRow]}>
+            <View style={[s.sectionTitleRow, isRTL && s.rtlRow]}>
+              <View style={[s.sectionIcon, { backgroundColor: currentTheme.warning + '15' }]}>
+                <MaterialIcons name="cloud-download" size={16} color={currentTheme.warning} />
+              </View>
+              <Text style={[s.sectionTitle, isRTL && s.rtlText]}>{t.exportReport}</Text>
+            </View>
+          </View>
+          <View style={s.exportGrid}>
+            <Pressable
+              style={({ pressed }) => [s.exportBtnCard, pressed && { opacity: 0.85 }]}
+              onPress={() => handleExport('PDF')}
+            >
+              <LinearGradient colors={['#FEE2E2', '#FECACA']} style={s.exportIconBg}>
+                <MaterialIcons name="picture-as-pdf" size={22} color="#DC2626" />
+              </LinearGradient>
+              <Text style={s.exportBtnText}>{t.downloadPdf}</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [s.exportBtnCard, pressed && { opacity: 0.85 }]}
+              onPress={() => handleExport('Excel')}
+            >
+              <LinearGradient colors={['#DCFCE7', '#BBF7D0']} style={s.exportIconBg}>
+                <MaterialIcons name="table-chart" size={22} color="#16A34A" />
+              </LinearGradient>
+              <Text style={s.exportBtnText}>{t.downloadExcel}</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [s.exportBtnCard, pressed && { opacity: 0.85 }]}
+              onPress={() => handleExport('WhatsApp')}
+            >
+              <LinearGradient colors={['#DCFCE7', '#BBF7D0']} style={s.exportIconBg}>
+                <MaterialIcons name="share" size={22} color="#25D366" />
+              </LinearGradient>
+              <Text style={s.exportBtnText}>{t.shareWhatsapp}</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Info Footer */}
+        <View style={s.footerInfo}>
+          <LinearGradient
+            colors={[currentTheme.primary + '10', currentTheme.primary + '04']}
+            style={s.footerGrad}
+          >
+            <MaterialIcons name="verified" size={20} color={currentTheme.primary} />
+            <Text style={[s.footerText, isRTL && s.rtlText]}>
+              {language === 'ur'
+                ? `📊 ${settings.shopName} • ڈیٹا ${new Date().toLocaleDateString()} تک`
+                : `📊 ${settings.shopName} • Data updated ${new Date().toLocaleDateString()}`}
+            </Text>
+          </LinearGradient>
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.background,
-  },
+const s = StyleSheet.create({
+  container: { flex: 1 },
+  rtlRow: { flexDirection: 'row-reverse' },
+  rtlText: { writingDirection: 'rtl', textAlign: 'right' },
   header: {
     paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 4,
+    paddingTop: 10,
+    paddingBottom: 24,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
   },
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: theme.textDark,
-    letterSpacing: -0.3,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: theme.textMuted,
-    marginTop: 2,
-  },
-  periodRow: {
+  headerTop: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
-    gap: 8,
-    marginTop: 18,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  headerTitle: { fontSize: 22, fontWeight: '800', color: '#FFF', letterSpacing: -0.3 },
+  headerSub: { fontSize: 12, color: 'rgba(255,255,255,0.75)', marginTop: 4, fontWeight: '500' },
+  exportBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  periodBar: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0,0,0,0.15)',
+    borderRadius: 14,
+    padding: 4,
+    marginTop: 16,
+    gap: 4,
   },
   periodChip: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 11,
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: theme.border,
+    gap: 5,
+    paddingVertical: 10,
+    borderRadius: 11,
   },
-  periodChipActive: {
-    backgroundColor: theme.primary,
-    borderColor: theme.primary,
+  periodChipActive: { backgroundColor: '#FFF' },
+  periodChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.85)',
   },
-  periodText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: theme.textSecondary,
-  },
-  periodTextActive: {
-    color: '#FFF',
-  },
-  summaryGrid: {
+  hero: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
-    gap: 12,
+    alignItems: 'center',
     marginTop: 18,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  heroLeft: { flex: 1 },
+  heroLabel: { fontSize: 11, color: 'rgba(255,255,255,0.7)', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  heroValue: { fontSize: 26, fontWeight: '800', color: '#FFF', marginTop: 4, letterSpacing: -0.5 },
+  heroPerf: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    marginTop: 8, paddingHorizontal: 8, paddingVertical: 3,
+    backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 8, alignSelf: 'flex-start',
+  },
+  heroPerfText: { fontSize: 11, fontWeight: '700' },
+  heroCircle: {
+    width: 76, height: 76, borderRadius: 38,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 3, borderColor: 'rgba(255,255,255,0.3)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  heroCircleText: { fontSize: 22, fontWeight: '800', color: '#FFF', letterSpacing: -0.5 },
+  heroCircleSub: { fontSize: 9, color: 'rgba(255,255,255,0.8)', fontWeight: '600', marginTop: -2 },
+
+  // Floating summary
+  summaryFloat: {
+    flexDirection: 'row',
+    gap: 12,
+    marginHorizontal: 16,
+    marginTop: -16,
   },
   summaryCard: {
     flex: 1,
-    padding: 16,
-    borderRadius: 18,
     backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 16,
     ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12 },
-      android: { elevation: 2 },
-      default: {},
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.08, shadowRadius: 16 },
+      android: { elevation: 4 }, default: {},
     }),
   },
-  summaryCardIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
+  summaryIcon: {
+    width: 38, height: 38, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
   },
-  summaryLabel: {
-    fontSize: 12,
-    color: theme.textMuted,
-    fontWeight: '500',
-    marginTop: 12,
-  },
-  summaryValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginTop: 4,
-  },
-  summaryCount: {
-    fontSize: 12,
-    color: theme.textMuted,
-    marginTop: 4,
-  },
-  outstandingCard: {
-    marginHorizontal: 20,
-    marginTop: 12,
-    borderRadius: 18,
-    overflow: 'hidden',
-  },
-  outstandingGradient: {
+  summaryLabel: { fontSize: 11, color: '#9CA3AF', fontWeight: '600', marginTop: 12, textTransform: 'uppercase', letterSpacing: 0.3 },
+  summaryValue: { fontSize: 20, fontWeight: '800', marginTop: 4, letterSpacing: -0.3 },
+  summaryFooter: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
+  summaryDot: { width: 6, height: 6, borderRadius: 3 },
+  summaryCount: { fontSize: 11, color: '#9CA3AF', fontWeight: '600' },
+
+  // Sections
+  section: { marginTop: 26, paddingHorizontal: 20 },
+  sectionHead: {
     flexDirection: 'row',
-    padding: 18,
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
   },
-  outstandingLeft: {
-    flex: 1,
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sectionIcon: {
+    width: 30, height: 30, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
   },
-  outstandingLabel: {
-    fontSize: 12,
-    color: theme.textMuted,
-    fontWeight: '500',
-  },
-  outstandingValue: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#D97706',
-    marginTop: 4,
-    letterSpacing: -0.3,
-  },
-  outstandingRight: {
-    alignItems: 'center',
-  },
-  outstandingIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: 'rgba(217,119,6,0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  outstandingCustomers: {
-    fontSize: 11,
-    color: theme.textMuted,
-    marginTop: 4,
-    fontWeight: '500',
-  },
-  section: {
-    marginTop: 28,
-    paddingHorizontal: 20,
-  },
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: theme.textDark,
-    marginBottom: 14,
-    letterSpacing: -0.2,
-  },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#111827', letterSpacing: -0.2 },
+  sectionBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
+  sectionBadgeText: { fontSize: 12, fontWeight: '800' },
+
+  // Chart
   chartCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 20,
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12 },
-      android: { elevation: 2 },
-      default: {},
+      android: { elevation: 2 }, default: {},
     }),
   },
-  chartContainer: {
+  chartInner: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    height: 120,
+    height: 130,
   },
-  chartCol: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  barsWrapper: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 3,
-    flex: 1,
-    justifyContent: 'center',
-  },
-  bar: {
-    width: 14,
-    borderRadius: 5,
-    minHeight: 4,
-  },
-  creditBar: {
-    backgroundColor: theme.credit,
-  },
-  debitBar: {
-    backgroundColor: theme.payment,
-  },
-  chartLabel: {
-    fontSize: 10,
-    color: theme.textMuted,
-    marginTop: 8,
-    fontWeight: '600',
-  },
+  chartCol: { flex: 1, alignItems: 'center' },
+  barsWrap: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, flex: 1, justifyContent: 'center' },
+  bar: { width: 12, borderRadius: 5, minHeight: 4 },
+  chartLabel: { fontSize: 10, color: '#9CA3AF', marginTop: 8, fontWeight: '700' },
   legendRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 24,
-    marginTop: 16,
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: theme.borderLight,
+    flexDirection: 'row', justifyContent: 'center', gap: 24,
+    marginTop: 16, paddingTop: 14,
+    borderTopWidth: 1, borderTopColor: '#F1F5F9',
   },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  legendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  legendText: {
-    fontSize: 12,
-    color: theme.textMuted,
-    fontWeight: '500',
-  },
-  debtorsList: {
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendDot: { width: 10, height: 10, borderRadius: 5 },
+  legendText: { fontSize: 12, color: '#9CA3AF', fontWeight: '600' },
+
+  // Debtors
+  debtorsCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 6,
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12 },
-      android: { elevation: 2 },
-      default: {},
+      android: { elevation: 2 }, default: {},
     }),
   },
   debtorRow: {
@@ -445,81 +540,66 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderBottomWidth: 1,
-    borderBottomColor: theme.borderLight,
+    borderBottomColor: '#F1F5F9',
   },
   rankBadge: {
-    width: 30,
-    height: 24,
-    borderRadius: 8,
-    backgroundColor: theme.borderLight,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center', justifyContent: 'center',
   },
-  rankText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: theme.textMuted,
-  },
-  debtorInfo: {
-    flex: 1,
-    marginLeft: 10,
-  },
-  debtorName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: theme.textDark,
-  },
+  rankText: { fontSize: 15, fontWeight: '800', color: '#9CA3AF' },
+  debtorName: { fontSize: 14, fontWeight: '700', color: '#111827' },
   debtorBar: {
-    height: 5,
-    backgroundColor: theme.borderLight,
-    borderRadius: 3,
-    marginTop: 6,
-    overflow: 'hidden',
+    height: 6, backgroundColor: '#F1F5F9', borderRadius: 3,
+    marginTop: 6, overflow: 'hidden',
   },
-  debtorBarFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  debtorAmount: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: theme.credit,
-    marginLeft: 8,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  statItem: {
+  debtorBarFill: { height: '100%', borderRadius: 3 },
+  debtorAmount: { fontSize: 14, fontWeight: '800', marginLeft: 8 },
+
+  emptyBox: { alignItems: 'center', paddingVertical: 30 },
+  emptyText: { fontSize: 14, color: '#9CA3AF', fontWeight: '600', marginTop: 8 },
+
+  // Stats
+  statsGrid: { flexDirection: 'row', gap: 10 },
+  statCard: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 18,
+    padding: 14,
     alignItems: 'center',
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12 },
-      android: { elevation: 2 },
-      default: {},
+      android: { elevation: 2 }, default: {},
     }),
   },
-  statIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+  statIconBg: {
+    width: 44, height: 44, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  statValue: { fontSize: 15, fontWeight: '800', color: '#111827', marginTop: 10, letterSpacing: -0.2 },
+  statLabel: { fontSize: 10, color: '#9CA3AF', marginTop: 4, textAlign: 'center', fontWeight: '600' },
+
+  // Export
+  exportGrid: { flexDirection: 'row', gap: 10 },
+  exportBtnCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 14,
     alignItems: 'center',
-    justifyContent: 'center',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.05, shadowRadius: 10 },
+      android: { elevation: 2 }, default: {},
+    }),
   },
-  statItemValue: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: theme.textDark,
-    marginTop: 8,
+  exportIconBg: {
+    width: 44, height: 44, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
   },
-  statItemLabel: {
-    fontSize: 11,
-    color: theme.textMuted,
-    marginTop: 4,
-    textAlign: 'center',
-    fontWeight: '500',
-  },
+  exportBtnText: { fontSize: 12, fontWeight: '700', color: '#4B5563', marginTop: 8 },
+
+  // Footer
+  footerInfo: { marginHorizontal: 20, marginTop: 24, borderRadius: 14, overflow: 'hidden' },
+  footerGrad: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14 },
+  footerText: { flex: 1, fontSize: 12, color: '#4B5563', fontWeight: '600' },
 });
