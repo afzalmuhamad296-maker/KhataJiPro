@@ -81,10 +81,24 @@ export default function DashboardScreen() {
           style={styles.headerGradient}
         >
           <View style={[styles.headerTop, isRTL && styles.rtlRow]}>
-            <View style={isRTL && { alignItems: 'flex-end' }}>
-              <Text style={[styles.greeting, isRTL && styles.rtlText]}>{getGreeting()} 👋</Text>
-              <Text style={[styles.shopName, isRTL && styles.rtlText]}>{settings.shopName}</Text>
-              <Text style={[styles.ownerName, isRTL && styles.rtlText]}>{settings.ownerName}</Text>
+            <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }, isRTL && styles.rtlRow]}>
+              <Pressable
+                style={({ pressed }) => [pressed && { opacity: 0.8, transform: [{ scale: 0.95 }] }]}
+                onPress={() => router.push('/(tabs)/settings')}
+                hitSlop={6}
+              >
+                <View style={styles.profileAvatar}>
+                  <Text style={styles.profileAvatarText}>
+                    {(settings.ownerName || settings.shopName || 'K').trim().split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                  </Text>
+                  <View style={styles.profileOnlineDot} />
+                </View>
+              </Pressable>
+              <View style={[{ flex: 1 }, isRTL && { alignItems: 'flex-end' }]}>
+                <Text style={[styles.greeting, isRTL && styles.rtlText]}>{getGreeting()} 👋</Text>
+                <Text style={[styles.shopName, isRTL && styles.rtlText]} numberOfLines={1}>{settings.shopName}</Text>
+                <Text style={[styles.ownerName, isRTL && styles.rtlText]} numberOfLines={1}>{settings.ownerName}</Text>
+              </View>
             </View>
             <View style={[styles.headerRight, isRTL && { alignItems: 'flex-start' }]}>
               <Pressable
@@ -94,7 +108,7 @@ export default function DashboardScreen() {
                 <MaterialIcons name="workspace-premium" size={14} color="#FFD700" />
                 <Text style={styles.planBadgeText}>{t.free.toUpperCase()}</Text>
               </Pressable>
-              <Pressable style={styles.notifButton}>
+              <Pressable style={styles.notifButton} onPress={() => router.push('/reminders')}>
                 <MaterialIcons name="notifications-none" size={22} color="rgba(255,255,255,0.9)" />
                 <View style={styles.notifDot} />
               </Pressable>
@@ -490,6 +504,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+  },
+  profileAvatar: {
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: '#FFD700',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 3, borderColor: 'rgba(255,255,255,0.4)',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6 },
+      android: { elevation: 5 }, default: {},
+    }),
+  },
+  profileAvatarText: { fontSize: 18, fontWeight: '800', color: '#065F37', letterSpacing: -0.3 },
+  profileOnlineDot: {
+    position: 'absolute', bottom: 2, right: 2, width: 12, height: 12,
+    borderRadius: 6, backgroundColor: '#22C55E',
+    borderWidth: 2, borderColor: '#065F37',
   },
   greeting: { fontSize: 14, color: 'rgba(255,255,255,0.75)', fontWeight: '500' },
   shopName: { fontSize: 24, fontWeight: '800', color: '#FFFFFF', marginTop: 4, letterSpacing: -0.3 },

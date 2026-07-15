@@ -1,116 +1,123 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, Alert, Modal, Linking, Share, Platform } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet, Modal, Linking, Share, Platform } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { theme } from '../../constants/theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Image } from 'expo-image';
 import { useApp } from '../../contexts/AppContext';
 import QRCode from 'react-native-qrcode-svg';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as Haptics from 'expo-haptics';
+import { useAlert } from '@/template';
 
 export default function LedgerScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { getCustomerById, getCustomerTransactions, deleteTransaction, formatCurrency, t } = useApp();
+  const {
+    getCustomerById, getCustomerTransactions, deleteTransaction, deleteCustomer,
+    formatCurrency, t, language, isRTL, currentTheme, settings, formatDate,
+  } = useApp();
+  const { showAlert } = useAlert();
   const [filter, setFilter] = useState<'all' | 'credit' | 'debit'>('all');
   const [showQR, setShowQR] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   const qrRef = useRef<any>(null);
 
-  const customer = getCustomerById(id || '');
+  const customer = getCustomerById(id || '') as any;
   const allTransactions = getCustomerTransactions(id || '');
   const transactions = allTransactions.filter(txn => filter === 'all' || txn.type === filter);
 
   if (!customer) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={{ padding: 20, alignItems: 'center' }}>
-          <Text>Customer not found</Text>
+      <SafeAreaView style={{ flex: 1, backgroundColor: currentTheme.background }}>
+        <View style={{ padding: 40, alignItems: 'center' }}>
+          <Text style={{ fontSize: 40 }}>😕</Text>
+          <Text style={{ marginTop: 12, color: currentTheme.textMuted }}>Customer not found</Text>
           <Pressable onPress={() => router.back()} style={{ marginTop: 16 }}>
-            <Text style={{ color: theme.primary }}>Go Back</Text>
+            <Text style={{ color: currentTheme.primary, fontWeight: '700' }}>Go Back</Text>
           </Pressable>
         </View>
       </SafeAreaView>
     );
   }
 
-  const qrData = customer ? JSON.stringify({
-    name: customer.name,
-    phone: customer.phone,
-    balance: customer.balance,
-    shop: 'KhataJi Pro',
-  }) : '';
+  const qrData = JSON.stringify({
+    name: customer.name, phone: customer.phone, balance: customer.balance, shop: settings.shopName,
+  });
 
   const handleShareWhatsApp = useCallback(async () => {
-    if (!customer) return;
-    const message = `*KhataJi Pro - Customer QR*\n\nName: ${customer.name}\nPhone: ${customer.phone}\nBalance: Rs. ${customer.balance.toLocaleString('en-PK')}\n\nScan this QR code to view ledger details.`;
-    const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(message)}`;
+    const message = `*${settings.shopName}*\n\n${language === 'ur' ? 'گاہک' : 'Customer'}: ${customer.name}\n${t.phone}: ${customer.phone}\n${t.balance}: ${formatCurrency(customer.balance)}`;
+    const url = `whatsapp://send?text=${encodeURIComponent(message)}`;
     try {
-      const canOpen = await Linking.canOpenURL(whatsappUrl);
-      if (canOpen) {
-        await Linking.openURL(whatsappUrl);
-      } else {
-        Alert.alert('WhatsApp', 'WhatsApp is not installed on this device');
-      }
-    } catch {
-      Alert.alert('Error', 'Could not open WhatsApp');
-    }
-  }, [customer]);
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) await Linking.openURL(url);
+      else showAlert('WhatsApp', 'WhatsApp is not installed');
+    } catch { showAlert(t.error, 'Could not open WhatsApp'); }
+  }, [customer, settings.shopName]);
 
   const handleDownloadQR = useCallback(async () => {
     if (!qrRef.current) return;
     try {
       qrRef.current.toDataURL(async (dataURL: string) => {
-        const filename = `${customer?.name.replace(/\s+/g, '_')}_QR.png`;
+        const filename = `${customer.name.replace(/\s+/g, '_')}_QR.png`;
         const fileUri = `${FileSystem.cacheDirectory}${filename}`;
-        await FileSystem.writeAsStringAsync(fileUri, dataURL, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        const isAvailable = await Sharing.isAvailableAsync();
-        if (isAvailable) {
-          await Sharing.shareAsync(fileUri, {
-            mimeType: 'image/png',
-            dialogTitle: 'Save QR Code',
-          });
-        } else {
-          Alert.alert('Saved', `QR code saved to ${fileUri}`);
-        }
+        await FileSystem.writeAsStringAsync(fileUri, dataURL, { encoding: FileSystem.EncodingType.Base64 });
+        if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(fileUri, { mimeType: 'image/png' });
       });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {
-      Alert.alert('Error', 'Could not save QR code');
-    }
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    } catch { showAlert(t.error, 'Could not save QR'); }
   }, [customer]);
 
-  const handleShareQR = useCallback(async () => {
-    if (!customer) return;
-    const message = `KhataJi Pro\nCustomer: ${customer.name}\nPhone: ${customer.phone}\nBalance: Rs. ${customer.balance.toLocaleString('en-PK')}`;
-    try {
-      await Share.share({ message });
-    } catch {
-      // user cancelled
+  const handleCall = () => {
+    if (!customer.phone) {
+      showAlert(t.error, language === 'ur' ? 'فون نمبر موجود نہیں' : 'No phone number');
+      return;
     }
-  }, [customer]);
+    Linking.openURL(`tel:${customer.phone}`).catch(() => {});
+  };
 
-  const handleDeleteTransaction = (txnId: string) => {
-    Alert.alert(
-      t.delete,
-      t.confirmDelete,
+  const handleSMS = () => {
+    if (!customer.phone) return;
+    const msg = language === 'ur'
+      ? `السلام علیکم ${customer.name}، ${settings.shopName} پر آپ کا بقایا ${formatCurrency(customer.balance)} ہے۔`
+      : `Dear ${customer.name}, your balance at ${settings.shopName} is ${formatCurrency(customer.balance)}. Please pay soon.`;
+    Linking.openURL(`sms:${customer.phone}?body=${encodeURIComponent(msg)}`).catch(() => {});
+  };
+
+  const handleShareStatement = async () => {
+    const stmt = `*${settings.shopName} - ${language === 'ur' ? 'اسٹیٹمنٹ' : 'Statement'}*\n\n${language === 'ur' ? 'گاہک' : 'Customer'}: ${customer.name}\n${t.phone}: ${customer.phone}\n\n${language === 'ur' ? 'کل ادھار' : 'Total Credit'}: ${formatCurrency(customer.totalCredit)}\n${language === 'ur' ? 'کل ادائیگی' : 'Total Paid'}: ${formatCurrency(customer.totalDebit)}\n${language === 'ur' ? 'موجودہ بقایا' : 'Current Balance'}: ${formatCurrency(customer.balance)}\n\n${language === 'ur' ? 'کل لین دین' : 'Total Transactions'}: ${allTransactions.length}`;
+    try { await Share.share({ message: stmt }); } catch {}
+  };
+
+  const handleDeleteCustomer = () => {
+    setShowMenu(false);
+    showAlert(
+      language === 'ur' ? 'گاہک حذف کریں؟' : 'Delete Customer?',
+      language === 'ur'
+        ? `${customer.name} اور اس کے تمام لین دین حذف ہو جائیں گے۔ یہ عمل واپس نہیں ہو سکتا۔`
+        : `${customer.name} and all their transactions will be permanently deleted. This cannot be undone.`,
       [
-        { text: t.no, style: 'cancel' },
-        { text: t.yes, style: 'destructive', onPress: () => deleteTransaction(txnId) },
-      ]
+        { text: t.cancel, style: 'cancel' },
+        {
+          text: t.delete, style: 'destructive',
+          onPress: () => {
+            deleteCustomer(customer.id);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+            router.back();
+          },
+        },
+      ],
     );
   };
 
-  const formatDate = (dateStr: string) => {
-    const today = new Date().toISOString().split('T')[0];
-    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-    if (dateStr === today) return 'Today';
-    if (dateStr === yesterday) return 'Yesterday';
-    return new Date(dateStr).toLocaleDateString('en-PK', { day: 'numeric', month: 'short' });
+  const handleDeleteTransaction = (txnId: string) => {
+    showAlert(t.delete, t.confirmDelete, [
+      { text: t.no, style: 'cancel' },
+      { text: t.yes, style: 'destructive', onPress: () => deleteTransaction(txnId) },
+    ]);
   };
 
   const groupedByDate = transactions.reduce((groups, txn) => {
@@ -120,121 +127,173 @@ export default function LedgerScreen() {
     return groups;
   }, {} as Record<string, typeof transactions>);
 
+  const getDateLabel = (d: string) => {
+    const today = new Date().toISOString().split('T')[0];
+    const yest = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    if (d === today) return t.today;
+    if (d === yest) return t.yesterday;
+    return formatDate(d);
+  };
+
+  const menuItems = [
+    { icon: 'edit', label: language === 'ur' ? 'ترمیم کریں' : 'Edit Customer', color: '#2563EB', bg: '#DBEAFE', action: () => { setShowMenu(false); showAlert(language === 'ur' ? 'جلد آ رہا ہے' : 'Coming Soon', language === 'ur' ? 'ترمیم کا آپشن جلد شامل ہوگا' : 'Edit customer coming soon'); } },
+    { icon: 'share', label: language === 'ur' ? 'اسٹیٹمنٹ شیئر' : 'Share Statement', color: '#16A34A', bg: '#DCFCE7', action: () => { setShowMenu(false); handleShareStatement(); } },
+    { icon: 'notifications-active', label: language === 'ur' ? 'یاد دہانی بھیجیں' : 'Send Reminder', color: '#D97706', bg: '#FEF3C7', action: () => { setShowMenu(false); handleSMS(); } },
+    { icon: 'receipt-long', label: language === 'ur' ? 'انوائس بنائیں' : 'Create Invoice', color: '#7C3AED', bg: '#F3E8FF', action: () => { setShowMenu(false); router.push('/invoice'); } },
+    { icon: 'qr-code-2', label: language === 'ur' ? 'کیو آر کوڈ' : 'Show QR Code', color: '#0891B2', bg: '#CFFAFE', action: () => { setShowMenu(false); setShowQR(true); } },
+    { icon: 'call', label: language === 'ur' ? 'کال کریں' : 'Call', color: '#0D7C4A', bg: '#DCFCE7', action: () => { setShowMenu(false); handleCall(); } },
+    { icon: 'block', label: language === 'ur' ? 'گاہک بلاک' : 'Block Customer', color: '#B45309', bg: '#FEF3C7', action: () => { setShowMenu(false); showAlert(language === 'ur' ? 'گاہک بلاک' : 'Blocked', language === 'ur' ? 'گاہک کو ادھار نہیں دیا جائے گا' : 'No further credit will be allowed'); } },
+    { icon: 'delete-forever', label: language === 'ur' ? 'گاہک حذف کریں' : 'Delete Customer', color: '#DC2626', bg: '#FEE2E2', danger: true, action: handleDeleteCustomer },
+  ];
+
+  const customerColor = customer.avatarColor || currentTheme.primary;
+
   return (
-    <SafeAreaView edges={['top']} style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
-          <MaterialIcons name="arrow-back" size={24} color={theme.textDark} />
-        </Pressable>
-        <Text style={styles.headerTitle}>{t.ledger}</Text>
-        <Pressable style={styles.moreButton}>
-          <MaterialIcons name="more-vert" size={24} color={theme.textDark} />
-        </Pressable>
-      </View>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: currentTheme.background }}>
+      {/* Gradient Header */}
+      <LinearGradient colors={currentTheme.primaryGradient as any} style={s.header}>
+        <View style={[s.headerRow, isRTL && s.rtlRow]}>
+          <Pressable style={s.hBtn} onPress={() => router.back()} hitSlop={8}>
+            <MaterialIcons name={isRTL ? 'arrow-forward' : 'arrow-back'} size={22} color="#FFF" />
+          </Pressable>
+          <Text style={s.hTitle}>{t.ledger}</Text>
+          <Pressable style={s.hBtn} onPress={() => setShowMenu(true)} hitSlop={8}>
+            <MaterialIcons name="more-vert" size={22} color="#FFF" />
+          </Pressable>
+        </View>
+
+        {/* Customer Card floating */}
+        <View style={s.custInfo}>
+          <View style={s.custAvatarWrap}>
+            {customer.photo ? (
+              <Image source={{ uri: customer.photo }} style={s.custPhoto} contentFit="cover" transition={200} />
+            ) : (
+              <View style={[s.custAvatarCircle, { backgroundColor: customerColor }]}>
+                <Text style={s.custAvatarText}>
+                  {customer.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
+                </Text>
+              </View>
+            )}
+          </View>
+          <Text style={s.custName}>{customer.name}</Text>
+          <Text style={s.custPhone}>{customer.phone || (language === 'ur' ? 'کوئی نمبر نہیں' : 'No phone')}</Text>
+          <View style={[s.balanceBadge, { backgroundColor: customer.balance > 0 ? 'rgba(220,38,38,0.15)' : 'rgba(22,163,74,0.15)' }]}>
+            <MaterialIcons
+              name={customer.balance > 0 ? 'trending-up' : 'check-circle'}
+              size={14}
+              color={customer.balance > 0 ? '#FCA5A5' : '#86EFAC'}
+            />
+            <Text style={[s.balanceText, { color: customer.balance > 0 ? '#FCA5A5' : '#86EFAC' }]}>
+              {customer.balance > 0 ? (language === 'ur' ? 'بقایا: ' : 'Due: ') : (language === 'ur' ? 'صاف: ' : 'Clear: ')}
+              {formatCurrency(customer.balance)}
+            </Text>
+          </View>
+        </View>
+      </LinearGradient>
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 90 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Customer Info Card */}
-        <View style={styles.customerCard}>
-          <View style={styles.customerAvatar}>
-            <Text style={styles.avatarText}>
-              {customer.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-            </Text>
-          </View>
-          <Text style={styles.customerName}>{customer.name}</Text>
-          <Text style={styles.customerPhone}>{customer.phone}</Text>
-          <View style={[styles.balanceBadge, { backgroundColor: customer.balance > 0 ? theme.creditLight : theme.paymentLight }]}>
-            <Text style={[styles.balanceText, { color: customer.balance > 0 ? theme.credit : theme.payment }]}>
-              {customer.balance > 0 ? 'Due: ' : 'Clear: '}{formatCurrency(customer.balance)}
-            </Text>
-          </View>
+        {/* Quick Actions */}
+        <View style={s.actionsRow}>
+          <Pressable style={s.actBtn} onPress={handleCall}>
+            <View style={[s.actIcon, { backgroundColor: '#DCFCE7' }]}>
+              <MaterialIcons name="phone" size={20} color="#16A34A" />
+            </View>
+            <Text style={s.actLabel}>{t.call}</Text>
+          </Pressable>
+          <Pressable style={s.actBtn} onPress={handleSMS}>
+            <View style={[s.actIcon, { backgroundColor: '#DBEAFE' }]}>
+              <MaterialIcons name="sms" size={20} color="#2563EB" />
+            </View>
+            <Text style={s.actLabel}>{t.sms}</Text>
+          </Pressable>
+          <Pressable style={s.actBtn} onPress={handleShareWhatsApp}>
+            <View style={[s.actIcon, { backgroundColor: '#F0FDF4' }]}>
+              <MaterialIcons name="chat" size={20} color="#25D366" />
+            </View>
+            <Text style={s.actLabel}>WA</Text>
+          </Pressable>
+          <Pressable style={s.actBtn} onPress={() => setShowQR(true)}>
+            <View style={[s.actIcon, { backgroundColor: '#EDE9FE' }]}>
+              <MaterialIcons name="qr-code-2" size={20} color="#7C3AED" />
+            </View>
+            <Text style={s.actLabel}>QR</Text>
+          </Pressable>
+        </View>
 
-          {/* Quick Actions */}
-          <View style={styles.actionsRow}>
-            <Pressable style={styles.actionBtn}>
-              <MaterialIcons name="phone" size={20} color={theme.primary} />
-              <Text style={styles.actionLabel}>{t.call}</Text>
-            </Pressable>
-            <Pressable style={styles.actionBtn}>
-              <MaterialIcons name="sms" size={20} color={theme.primary} />
-              <Text style={styles.actionLabel}>{t.sms}</Text>
-            </Pressable>
-            <Pressable style={[styles.actionBtn, { backgroundColor: theme.paymentLight }]} onPress={() => router.push('/add-payment')}>
-              <MaterialIcons name="payments" size={20} color={theme.payment} />
-              <Text style={[styles.actionLabel, { color: theme.payment }]}>{t.pay}</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.actionBtn, { backgroundColor: '#E3F2FD' }]}
-              onPress={() => { setShowQR(true); Haptics.selectionAsync(); }}
-            >
-              <MaterialIcons name="qr-code-2" size={20} color="#1565C0" />
-              <Text style={[styles.actionLabel, { color: '#1565C0' }]}>QR</Text>
-            </Pressable>
+        {/* Summary */}
+        <View style={s.summaryRow}>
+          <View style={[s.sumBox, { borderLeftColor: currentTheme.credit }]}>
+            <Text style={s.sumLabel}>{t.totalCredit}</Text>
+            <Text style={[s.sumValue, { color: currentTheme.credit }]}>{formatCurrency(customer.totalCredit)}</Text>
+          </View>
+          <View style={[s.sumBox, { borderLeftColor: currentTheme.payment }]}>
+            <Text style={s.sumLabel}>{t.totalDebit}</Text>
+            <Text style={[s.sumValue, { color: currentTheme.payment }]}>{formatCurrency(customer.totalDebit)}</Text>
           </View>
         </View>
 
-        {/* Credit/Debit Summary */}
-        <View style={styles.summaryRow}>
-          <View style={[styles.summaryBox, { borderLeftColor: theme.credit }]}>
-            <Text style={styles.summaryLabel}>{t.totalCredit}</Text>
-            <Text style={[styles.summaryValue, { color: theme.credit }]}>{formatCurrency(customer.totalCredit)}</Text>
-          </View>
-          <View style={[styles.summaryBox, { borderLeftColor: theme.payment }]}>
-            <Text style={styles.summaryLabel}>{t.totalDebit}</Text>
-            <Text style={[styles.summaryValue, { color: theme.payment }]}>{formatCurrency(customer.totalDebit)}</Text>
-          </View>
-        </View>
-
-        {/* Filter Chips */}
-        <View style={styles.filterRow}>
+        {/* Filter */}
+        <View style={s.filterRow}>
           {([
-            { key: 'all', label: t.all },
-            { key: 'credit', label: t.credits },
-            { key: 'debit', label: t.payments },
+            { key: 'all', label: t.all, count: allTransactions.length },
+            { key: 'credit', label: t.credits, count: allTransactions.filter(t => t.type === 'credit').length },
+            { key: 'debit', label: t.payments, count: allTransactions.filter(t => t.type === 'debit').length },
           ] as const).map(item => (
             <Pressable
               key={item.key}
-              style={[styles.filterChip, filter === item.key && styles.filterChipActive]}
+              style={[s.filterChip, filter === item.key && { backgroundColor: currentTheme.primary, borderColor: currentTheme.primary }]}
               onPress={() => setFilter(item.key)}
             >
-              <Text style={[styles.filterText, filter === item.key && styles.filterTextActive]}>
-                {item.label}
-              </Text>
+              <Text style={[s.filterText, filter === item.key && { color: '#FFF' }]}>{item.label}</Text>
+              <View style={[s.filterCount, filter === item.key && { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
+                <Text style={[s.filterCountText, filter === item.key && { color: '#FFF' }]}>{item.count}</Text>
+              </View>
             </Pressable>
           ))}
         </View>
 
-        {/* Transaction List */}
+        {/* Transactions */}
         {Object.entries(groupedByDate).map(([date, txns]) => (
-          <View key={date} style={styles.dateGroup}>
-            <Text style={styles.dateLabel}>{formatDate(date)}</Text>
+          <View key={date} style={s.dateGroup}>
+            <Text style={[s.dateLabel, isRTL && s.rtlText]}>{getDateLabel(date)}</Text>
             {txns.map(txn => (
               <Pressable
                 key={txn.id}
-                style={styles.txnRow}
+                style={s.txnRow}
                 onLongPress={() => handleDeleteTransaction(txn.id)}
               >
-                <View style={[styles.txnDot, { backgroundColor: txn.type === 'credit' ? theme.credit : theme.payment }]} />
-                <View style={styles.txnInfo}>
-                  <Text style={styles.txnNote}>{txn.note || (txn.type === 'credit' ? 'Credit given' : 'Payment received')}</Text>
+                <View style={[s.txnDot, { backgroundColor: txn.type === 'credit' ? currentTheme.credit : currentTheme.payment }]}>
+                  <MaterialIcons name={txn.type === 'credit' ? 'north-east' : 'south-west'} size={12} color="#FFF" />
+                </View>
+                <View style={s.txnInfo}>
+                  <Text style={[s.txnNote, isRTL && s.rtlText]}>
+                    {txn.note || (txn.type === 'credit' ? t.creditGiven : t.paymentReceived)}
+                  </Text>
                   {txn.items && txn.items.length > 0 && (
-                    <View style={styles.itemsList}>
-                      {txn.items.map(item => (
-                        <Text key={item.id} style={styles.itemText}>
-                          {item.name} × {item.quantity} = {formatCurrency(item.total)}
-                        </Text>
+                    <View style={s.itemsRow}>
+                      {txn.items.slice(0, 3).map(item => (
+                        <View key={item.id} style={s.itemChip}>
+                          <Text style={s.itemChipText}>{item.name} ×{item.quantity}</Text>
+                        </View>
                       ))}
+                      {txn.items.length > 3 && (
+                        <View style={s.itemChip}>
+                          <Text style={s.itemChipText}>+{txn.items.length - 3}</Text>
+                        </View>
+                      )}
                     </View>
                   )}
                   {txn.paymentMethod && (
-                    <Text style={styles.txnMethod}>via {txn.paymentMethod}</Text>
+                    <Text style={s.txnMethod}>
+                      <MaterialIcons name="account-balance" size={10} /> via {txn.paymentMethod}
+                    </Text>
                   )}
                 </View>
-                <Text style={[styles.txnAmount, { color: txn.type === 'credit' ? theme.credit : theme.payment }]}>
+                <Text style={[s.txnAmount, { color: txn.type === 'credit' ? currentTheme.credit : currentTheme.payment }]}>
                   {txn.type === 'credit' ? '+' : '-'}{formatCurrency(txn.amount)}
                 </Text>
               </Pressable>
@@ -243,416 +302,201 @@ export default function LedgerScreen() {
         ))}
 
         {transactions.length === 0 && (
-          <View style={styles.emptyState}>
-            <MaterialIcons name="receipt-long" size={56} color={theme.border} />
-            <Text style={styles.emptyText}>{t.noTransactions}</Text>
+          <View style={s.empty}>
+            <Text style={{ fontSize: 56 }}>📋</Text>
+            <Text style={s.emptyText}>{t.noTransactions}</Text>
+            <Text style={s.emptySub}>
+              {language === 'ur' ? 'پہلا لین دین شامل کریں' : 'Add first transaction below'}
+            </Text>
           </View>
         )}
       </ScrollView>
 
-      {/* QR Code Modal */}
-      <Modal visible={showQR} animationType="slide" transparent statusBarTranslucent>
-        <View style={styles.qrOverlay}>
-          <View style={styles.qrModal}>
-            <View style={styles.qrHeader}>
-              <Text style={styles.qrTitle}>Customer QR Code</Text>
-              <Pressable onPress={() => setShowQR(false)} style={styles.qrCloseBtn}>
-                <MaterialIcons name="close" size={22} color={theme.textDark} />
+      {/* Bottom Actions */}
+      <View style={[s.bottomActions, { paddingBottom: insets.bottom + 12 }]}>
+        <Pressable style={({ pressed }) => [{ flex: 1 }, pressed && { opacity: 0.9 }]} onPress={() => router.push('/add-credit')}>
+          <LinearGradient colors={[currentTheme.credit, '#B91C1C']} style={s.bottomBtn}>
+            <MaterialIcons name="north-east" size={18} color="#FFF" />
+            <Text style={s.bottomBtnText}>{t.addCredit}</Text>
+          </LinearGradient>
+        </Pressable>
+        <Pressable style={({ pressed }) => [{ flex: 1 }, pressed && { opacity: 0.9 }]} onPress={() => router.push('/add-payment')}>
+          <LinearGradient colors={[currentTheme.payment, '#15803D']} style={s.bottomBtn}>
+            <MaterialIcons name="south-west" size={18} color="#FFF" />
+            <Text style={s.bottomBtnText}>{t.addPayment}</Text>
+          </LinearGradient>
+        </Pressable>
+      </View>
+
+      {/* Three-Dot Menu */}
+      <Modal visible={showMenu} transparent animationType="fade" onRequestClose={() => setShowMenu(false)}>
+        <Pressable style={s.menuOverlay} onPress={() => setShowMenu(false)}>
+          <Pressable style={s.menuCard}>
+            <View style={s.menuHandle} />
+            <View style={s.menuHeader}>
+              <View style={[s.menuAvatarSm, { backgroundColor: customerColor }]}>
+                <Text style={s.menuAvatarText}>
+                  {customer.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
+                </Text>
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={s.menuTitle}>{customer.name}</Text>
+                <Text style={s.menuSubtitle}>
+                  {language === 'ur' ? 'گاہک کے اعمال' : 'Customer Actions'}
+                </Text>
+              </View>
+              <Pressable onPress={() => setShowMenu(false)} hitSlop={8}>
+                <MaterialIcons name="close" size={22} color={currentTheme.textDark} />
               </Pressable>
             </View>
 
-            <View style={styles.qrContent}>
-              <View style={styles.qrFrame}>
+            <ScrollView style={{ maxHeight: 500 }}>
+              {menuItems.map((item, idx) => (
+                <Pressable
+                  key={idx}
+                  style={({ pressed }) => [s.menuItem, pressed && { backgroundColor: currentTheme.borderLight }, isRTL && s.rtlRow]}
+                  onPress={item.action}
+                >
+                  <View style={[s.menuItemIcon, { backgroundColor: item.bg }]}>
+                    <MaterialIcons name={item.icon as any} size={20} color={item.color} />
+                  </View>
+                  <Text style={[s.menuItemText, item.danger && { color: '#DC2626' }, isRTL && s.rtlText]}>
+                    {item.label}
+                  </Text>
+                  <MaterialIcons
+                    name={isRTL ? 'chevron-left' : 'chevron-right'}
+                    size={20}
+                    color={currentTheme.textMuted}
+                  />
+                </Pressable>
+              ))}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* QR Modal */}
+      <Modal visible={showQR} animationType="slide" transparent statusBarTranslucent>
+        <View style={s.qrOverlay}>
+          <View style={s.qrModal}>
+            <LinearGradient colors={currentTheme.primaryGradient as any} style={s.qrHeader}>
+              <Text style={s.qrTitle}>📱 {language === 'ur' ? 'کیو آر کوڈ' : 'Customer QR'}</Text>
+              <Pressable onPress={() => setShowQR(false)} style={s.qrClose}>
+                <MaterialIcons name="close" size={22} color="#FFF" />
+              </Pressable>
+            </LinearGradient>
+            <View style={s.qrContent}>
+              <View style={s.qrFrame}>
                 <QRCode
                   value={qrData}
                   size={200}
-                  color={theme.primaryDark}
+                  color={currentTheme.primaryDark}
                   backgroundColor="#FFFFFF"
-                  getRef={(ref) => { qrRef.current = ref; }}
+                  getRef={(ref: any) => { qrRef.current = ref; }}
                 />
               </View>
-
-              <View style={styles.qrCustomerInfo}>
-                <Text style={styles.qrCustomerName}>{customer?.name}</Text>
-                <Text style={styles.qrCustomerPhone}>{customer?.phone}</Text>
-                <View style={[styles.qrBalanceBadge, { backgroundColor: (customer?.balance || 0) > 0 ? theme.creditLight : theme.paymentLight }]}>
-                  <Text style={[styles.qrBalanceText, { color: (customer?.balance || 0) > 0 ? theme.credit : theme.payment }]}>
-                    Balance: {formatCurrency(customer?.balance || 0)}
-                  </Text>
-                </View>
+              <Text style={s.qrCustName}>{customer.name}</Text>
+              <Text style={s.qrCustPhone}>{customer.phone}</Text>
+              <View style={[s.qrBalanceBadge, { backgroundColor: customer.balance > 0 ? '#FEE2E2' : '#DCFCE7' }]}>
+                <Text style={{ fontSize: 13, fontWeight: '800', color: customer.balance > 0 ? '#DC2626' : '#16A34A' }}>
+                  {formatCurrency(customer.balance)}
+                </Text>
               </View>
-
-              <View style={styles.qrActions}>
-                <Pressable style={[styles.qrActionBtn, { backgroundColor: '#25D366' }]} onPress={handleShareWhatsApp}>
-                  <MaterialIcons name="chat" size={20} color="#FFF" />
-                  <Text style={styles.qrActionBtnText}>WhatsApp</Text>
+              <View style={s.qrActions}>
+                <Pressable style={[s.qrActBtn, { backgroundColor: '#25D366' }]} onPress={handleShareWhatsApp}>
+                  <MaterialIcons name="chat" size={16} color="#FFF" />
+                  <Text style={s.qrActText}>Share</Text>
                 </Pressable>
-                <Pressable style={[styles.qrActionBtn, { backgroundColor: theme.primary }]} onPress={handleDownloadQR}>
-                  <MaterialIcons name="download" size={20} color="#FFF" />
-                  <Text style={styles.qrActionBtnText}>Download</Text>
-                </Pressable>
-                <Pressable style={[styles.qrActionBtn, { backgroundColor: '#1565C0' }]} onPress={handleShareQR}>
-                  <MaterialIcons name="share" size={20} color="#FFF" />
-                  <Text style={styles.qrActionBtnText}>Share</Text>
+                <Pressable style={[s.qrActBtn, { backgroundColor: currentTheme.primary }]} onPress={handleDownloadQR}>
+                  <MaterialIcons name="download" size={16} color="#FFF" />
+                  <Text style={s.qrActText}>Save</Text>
                 </Pressable>
               </View>
-
-              <Text style={styles.qrHint}>Scan this QR to quickly open this customer's ledger</Text>
             </View>
           </View>
         </View>
       </Modal>
-
-      {/* Bottom Action Buttons */}
-      <View style={[styles.bottomActions, { paddingBottom: insets.bottom + 16 }]}>
-        <Pressable style={[styles.bottomBtn, styles.creditBtn]} onPress={() => router.push('/add-credit')}>
-          <MaterialIcons name="add" size={20} color="#FFF" />
-          <Text style={styles.bottomBtnText}>{t.addCredit}</Text>
-        </Pressable>
-        <Pressable style={[styles.bottomBtn, styles.paymentBtn]} onPress={() => router.push('/add-payment')}>
-          <MaterialIcons name="payments" size={20} color="#FFF" />
-          <Text style={styles.bottomBtnText}>{t.addPayment}</Text>
-        </Pressable>
-      </View>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: theme.textPrimary,
-  },
-  moreButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  customerCard: {
-    marginHorizontal: 16,
-    backgroundColor: theme.surface,
-    borderRadius: theme.borderRadius.lg,
-    padding: 20,
-    alignItems: 'center',
-    ...theme.cardShadow,
-  },
-  customerAvatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: theme.backgroundSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: theme.primary,
-  },
-  customerName: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: theme.textDark,
-    marginTop: 10,
-  },
-  customerPhone: {
-    fontSize: 14,
-    color: theme.textMuted,
-    marginTop: 4,
-  },
-  balanceBadge: {
-    marginTop: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  balanceText: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 16,
-  },
-  actionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: theme.backgroundSecondary,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  actionLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: theme.primary,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    gap: 10,
-    marginTop: 16,
-  },
-  summaryBox: {
-    flex: 1,
-    backgroundColor: theme.surface,
-    borderRadius: theme.borderRadius.md,
-    padding: 14,
-    borderLeftWidth: 3,
-    ...theme.cardShadow,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    color: theme.textMuted,
-    fontWeight: '500',
-  },
-  summaryValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginTop: 4,
-  },
-  filterRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    gap: 8,
-    marginTop: 16,
-  },
-  filterChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: theme.surface,
-    borderWidth: 1,
-    borderColor: theme.border,
-  },
-  filterChipActive: {
-    backgroundColor: theme.primary,
-    borderColor: theme.primary,
-  },
-  filterText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: theme.textSecondary,
-  },
-  filterTextActive: {
-    color: '#FFF',
-  },
-  dateGroup: {
-    marginTop: 16,
-    paddingHorizontal: 16,
-  },
-  dateLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: theme.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  txnRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: theme.surface,
-    padding: 14,
-    borderRadius: theme.borderRadius.md,
-    marginBottom: 8,
-    ...theme.cardShadow,
-  },
-  txnDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginTop: 5,
-  },
-  txnInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  txnNote: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: theme.textDark,
-  },
-  itemsList: {
-    marginTop: 6,
-  },
-  itemText: {
-    fontSize: 12,
-    color: theme.textMuted,
-    lineHeight: 18,
-  },
-  txnMethod: {
-    fontSize: 11,
-    color: theme.textMuted,
-    marginTop: 4,
-    fontStyle: 'italic',
-  },
-  txnAmount: {
-    fontSize: 15,
-    fontWeight: '700',
-    marginLeft: 8,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingTop: 60,
-  },
-  emptyText: {
-    fontSize: 15,
-    color: theme.textMuted,
-    marginTop: 12,
-  },
-  bottomActions: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    gap: 10,
-    backgroundColor: theme.background,
-    borderTopWidth: 1,
-    borderTopColor: theme.borderLight,
-  },
-  bottomBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 14,
-    borderRadius: theme.borderRadius.md,
-  },
-  creditBtn: {
-    backgroundColor: theme.credit,
-  },
-  paymentBtn: {
-    backgroundColor: theme.payment,
-  },
-  bottomBtnText: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  // QR Modal Styles
-  qrOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  qrModal: {
-    width: '100%',
-    maxWidth: 360,
-    backgroundColor: theme.surface,
-    borderRadius: theme.borderRadius.xl,
-    overflow: 'hidden',
-  },
-  qrHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.borderLight,
-  },
-  qrTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: theme.textDark,
-  },
-  qrCloseBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: theme.backgroundSecondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  qrContent: {
-    alignItems: 'center',
-    padding: 24,
-  },
-  qrFrame: {
-    padding: 20,
-    borderRadius: theme.borderRadius.lg,
-    backgroundColor: '#FFF',
-    borderWidth: 2,
-    borderColor: theme.borderLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  qrCustomerInfo: {
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  qrCustomerName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: theme.textDark,
-  },
-  qrCustomerPhone: {
-    fontSize: 14,
-    color: theme.textMuted,
-    marginTop: 4,
-  },
-  qrBalanceBadge: {
-    marginTop: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 5,
-    borderRadius: 14,
-  },
-  qrBalanceText: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  qrActions: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 20,
-  },
-  qrActionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: theme.borderRadius.sm,
-  },
-  qrActionBtnText: {
-    color: '#FFF',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  qrHint: {
-    fontSize: 12,
-    color: theme.textMuted,
-    marginTop: 16,
-    textAlign: 'center',
-  },
+const s = StyleSheet.create({
+  rtlRow: { flexDirection: 'row-reverse' },
+  rtlText: { writingDirection: 'rtl', textAlign: 'right' },
+  header: { paddingTop: 6, paddingBottom: 24, paddingHorizontal: 12, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  hBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  hTitle: { fontSize: 17, fontWeight: '800', color: '#FFF' },
+
+  custInfo: { alignItems: 'center', marginTop: 16 },
+  custAvatarWrap: { padding: 3, borderRadius: 50, borderWidth: 3, borderColor: 'rgba(255,215,0,0.5)' },
+  custPhoto: { width: 84, height: 84, borderRadius: 42 },
+  custAvatarCircle: { width: 84, height: 84, borderRadius: 42, alignItems: 'center', justifyContent: 'center' },
+  custAvatarText: { fontSize: 30, fontWeight: '800', color: '#FFF' },
+  custName: { fontSize: 20, fontWeight: '800', color: '#FFF', marginTop: 12 },
+  custPhone: { fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 4, fontWeight: '500' },
+  balanceBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 12, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 12 },
+  balanceText: { fontSize: 14, fontWeight: '800' },
+
+  actionsRow: { flexDirection: 'row', justifyContent: 'space-around', marginHorizontal: 16, marginTop: 18, backgroundColor: '#FFF', borderRadius: 18, padding: 12, ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 }, android: { elevation: 3 }, default: {} }) },
+  actBtn: { alignItems: 'center', gap: 6 },
+  actIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  actLabel: { fontSize: 11, fontWeight: '700', color: '#4B5563' },
+
+  summaryRow: { flexDirection: 'row', paddingHorizontal: 16, gap: 10, marginTop: 14 },
+  sumBox: { flex: 1, backgroundColor: '#FFF', borderRadius: 14, padding: 14, borderLeftWidth: 4, ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6 }, android: { elevation: 2 }, default: {} }) },
+  sumLabel: { fontSize: 11, color: '#9CA3AF', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  sumValue: { fontSize: 16, fontWeight: '800', marginTop: 4 },
+
+  filterRow: { flexDirection: 'row', paddingHorizontal: 16, gap: 8, marginTop: 16 },
+  filterChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: '#FFF', borderWidth: 1.5, borderColor: '#E2E8F0' },
+  filterText: { fontSize: 12, fontWeight: '700', color: '#4B5563' },
+  filterCount: { backgroundColor: '#F1F5F9', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6, minWidth: 18, alignItems: 'center' },
+  filterCountText: { fontSize: 10, fontWeight: '800', color: '#4B5563' },
+
+  dateGroup: { marginTop: 16, paddingHorizontal: 16 },
+  dateLabel: { fontSize: 11, fontWeight: '800', color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
+  txnRow: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#FFF', padding: 12, borderRadius: 14, marginBottom: 8, ...Platform.select({ ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03, shadowRadius: 4 }, android: { elevation: 1 }, default: {} }) },
+  txnDot: { width: 28, height: 28, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  txnInfo: { flex: 1, marginLeft: 12 },
+  txnNote: { fontSize: 13, fontWeight: '600', color: '#111827' },
+  itemsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 },
+  itemChip: { backgroundColor: '#F1F5F9', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
+  itemChipText: { fontSize: 10, color: '#0D7C4A', fontWeight: '700' },
+  txnMethod: { fontSize: 10, color: '#9CA3AF', marginTop: 4, fontStyle: 'italic' },
+  txnAmount: { fontSize: 14, fontWeight: '800', marginLeft: 8 },
+
+  empty: { alignItems: 'center', paddingTop: 40, paddingHorizontal: 40 },
+  emptyText: { fontSize: 16, color: '#111827', marginTop: 12, fontWeight: '700' },
+  emptySub: { fontSize: 12, color: '#9CA3AF', marginTop: 4 },
+
+  bottomActions: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', paddingHorizontal: 16, paddingTop: 10, gap: 10, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#F1F5F9' },
+  bottomBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 12 },
+  bottomBtnText: { color: '#FFF', fontSize: 14, fontWeight: '800' },
+
+  menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  menuCard: { backgroundColor: '#FFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingBottom: 24, maxHeight: '85%' },
+  menuHandle: { width: 40, height: 4, backgroundColor: '#E2E8F0', borderRadius: 2, alignSelf: 'center', marginTop: 10 },
+  menuHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  menuAvatarSm: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  menuAvatarText: { fontSize: 14, fontWeight: '800', color: '#FFF' },
+  menuTitle: { fontSize: 15, fontWeight: '800', color: '#111827' },
+  menuSubtitle: { fontSize: 11, color: '#9CA3AF', marginTop: 2, fontWeight: '500' },
+  menuItem: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 12 },
+  menuItemIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  menuItemText: { flex: 1, fontSize: 14, fontWeight: '700', color: '#111827' },
+
+  qrOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  qrModal: { width: '100%', maxWidth: 380, backgroundColor: '#FFF', borderRadius: 24, overflow: 'hidden' },
+  qrHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16 },
+  qrTitle: { fontSize: 16, fontWeight: '800', color: '#FFF' },
+  qrClose: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  qrContent: { alignItems: 'center', padding: 24 },
+  qrFrame: { padding: 16, borderRadius: 16, backgroundColor: '#FFF', borderWidth: 2, borderColor: '#F1F5F9' },
+  qrCustName: { fontSize: 17, fontWeight: '800', color: '#111827', marginTop: 16 },
+  qrCustPhone: { fontSize: 13, color: '#9CA3AF', marginTop: 4 },
+  qrBalanceBadge: { marginTop: 10, paddingHorizontal: 14, paddingVertical: 5, borderRadius: 12 },
+  qrActions: { flexDirection: 'row', gap: 10, marginTop: 20 },
+  qrActBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, paddingVertical: 11, borderRadius: 12 },
+  qrActText: { color: '#FFF', fontSize: 13, fontWeight: '800' },
 });
